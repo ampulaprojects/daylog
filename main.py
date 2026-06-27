@@ -140,7 +140,7 @@ def list_entries(
     limit: int = 50,
     user=Depends(require_auth)
 ):
-    entries = get_entries(search=search, mood=mood, limit=limit, user_id=user["id"])
+    entries = get_entries(search=search, mood=mood, limit=limit)
     for e in entries:
         e["tags"] = json.loads(e["tags"] or "[]")
         e["llm_tags"] = json.loads(e["llm_tags"] or "[]")
@@ -149,7 +149,7 @@ def list_entries(
 
 @app.get("/entries/{entry_id}")
 def get_single_entry(entry_id: int, user=Depends(require_auth)):
-    entry = get_entry(entry_id, user_id=user["id"])
+    entry = get_entry(entry_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Záznam nenájdený")
     entry["tags"] = json.loads(entry["tags"] or "[]")
