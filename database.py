@@ -19,7 +19,17 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             hashed_password TEXT NOT NULL,
+            email TEXT,
+            role TEXT NOT NULL DEFAULT 'user',
             created_at TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS whitelist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            added_by TEXT,
+            added_at TEXT NOT NULL
         )
     """)
     conn.execute("""
@@ -40,22 +50,33 @@ def init_db():
             user_id INTEGER REFERENCES users(id)
         )
     """)
-    try:
-        conn.execute("ALTER TABLE entries ADD COLUMN user_id INTEGER REFERENCES users(id)")
-    except Exception:
-        pass
+    for col, definition in [
+        ("user_id", "INTEGER REFERENCES users(id)"),
+        ("email", "TEXT"),
+        ("role", "TEXT NOT NULL DEFAULT 'user'"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE users ADD COLUMN {col} {definition}")
+        except Exception:
+            pass
+        try:
+            conn.execute(f"ALTER TABLE entries ADD COLUMN {col} {definition}")
+        except Exception:
+            pass
     conn.commit()
     conn.close()
 
 
-def create_user(username: str, password: str) -> bool:
+# ── Users ──────────────────────────────────────────────────────────────────
+
+def create_user(username: str, password: str, email: str = None, role: str = "user") -> bool:
     from auth import hash_password
     conn = get_db()
     now = datetime.utcnow().isoformat()
     try:
         conn.execute(
-            "INSERT INTO users (username, hashed_password, created_at) VALUES (?,?,?)",
-            (username, hash_password(password), now)
+            "INSERT INTO users (username, hashed_password, email, role, created_at) VALUES (?,?,?,?,?)",
+            (username, hash_password(password), email, role, now)
         )
         conn.commit()
         return True
@@ -72,12 +93,87 @@ def get_user_by_username(username: str):
     return dict(row) if row else None
 
 
+def get_user_by_email(email: str):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
 def get_user_by_id(user_id: int):
     conn = get_db()
     row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     conn.close()
     return dict(row) if row else None
 
+
+def get_all_users():
+    conn = get_db()
+    rows = conn.execute("SELECT id, username, email, role, created_at FROM users ORDER BY id").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def set_user_role(username: str, role: str):
+    conn = get_db()
+    conn.execute("UPDATE users SET role = ? WHERE username = ?", (role, username))
+    conn.commit()
+    conn.close()
+
+
+def change_user_password(username: str, new_password: str):
+    from auth import hash_password
+    conn = get_db()
+    conn.execute(
+        "UPDATE users SET hashed_password = ? WHERE username = ?",
+        (hash_password(new_password), username)
+    )
+    conn.commit()
+    conn.close()
+
+
+# ── Whitelist ──────────────────────────────────────────────────────────────
+
+def add_to_whitelist(email: str, added_by: str = "system"):
+    conn = get_db()
+    now = datetime.utcnow().isoformat()
+    try:
+        conn.execute(
+            "INSERT INTO whitelist (email, added_by, added_at) VALUES (?,?,?)",
+            (email.lower().strip(), added_by, now)
+        )
+        conn.commit()
+        return True
+    except Exception:
+        return False
+    finally:
+        conn.close()
+
+
+def remove_from_whitelist(email: str):
+    conn = get_db()
+    conn.execute("DELETE FROM whitelist WHERE email = ?", (email.lower().strip(),))
+    conn.commit()
+    conn.close()
+
+
+def is_in_whitelist(email: str) -> bool:
+    conn = get_db()
+    row = conn.execute(
+        "SELECT id FROM whitelist WHERE email = ?", (email.lower().strip(),)
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
+def get_whitelist():
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM whitelist ORDER BY added_at").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+# ── Entries ────────────────────────────────────────────────────────────────
 
 def create_entry(entry_date, text, title=None, mood=None, tags=None, source="typed", user_id=None):
     conn = get_db()
@@ -100,11 +196,8 @@ def update_llm_analysis(entry_id, analysis, llm_tags, llm_mood, model_name):
     now = datetime.utcnow().isoformat()
     conn.execute(
         """UPDATE entries SET
-           llm_analysis = ?,
-           llm_tags = ?,
-           llm_mood = ?,
-           llm_processed_at = ?,
-           llm_model = ?
+           llm_analysis = ?, llm_tags = ?, llm_mood = ?,
+           llm_processed_at = ?, llm_model = ?
            WHERE id = ?""",
         (json.dumps(analysis), json.dumps(llm_tags), llm_mood, now, model_name, entry_id)
     )

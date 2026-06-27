@@ -5,7 +5,8 @@ from pydantic import BaseModel
 from typing import Optional, List
 from database import (
     init_db, create_entry, get_entries, get_entry,
-    create_user, get_user_by_username, get_user_by_id
+    create_user, get_user_by_username, get_user_by_id, get_user_by_email,
+    set_user_role, is_in_whitelist, add_to_whitelist
 )
 from auth import verify_password, create_session_token, decode_session_token
 import json
@@ -16,8 +17,13 @@ SESSION_MAX_AGE = 30 * 24 * 3600
 
 
 def _init_users():
-    create_user("jan", "jan2026")
-    create_user("eva", "eva2026")
+    add_to_whitelist("jan@daylog.local", added_by="system")
+    add_to_whitelist("eva@daylog.local", added_by="system")
+    if not get_user_by_username("jan"):
+        create_user("jan", "jan2026", email="jan@daylog.local", role="admin")
+    else:
+        set_user_role("jan", "admin")
+    create_user("eva", "eva2026", email="eva@daylog.local", role="user")
 
 
 @app.on_event("startup")
@@ -25,6 +31,8 @@ def startup():
     init_db()
     _init_users()
 
+
+# ── Auth helpers ────────────────────────────────────────────────────────────
 
 def get_session_user(session: Optional[str] = Cookie(None)):
     if not session:
@@ -41,6 +49,8 @@ def require_auth(user=Depends(get_session_user)):
     return user
 
 
+# ── Pages ────────────────────────────────────────────────────────────────────
+
 @app.get("/")
 def root(session: Optional[str] = Cookie(None)):
     user_id = decode_session_token(session) if session else None
@@ -54,6 +64,13 @@ def login_page():
     return FileResponse("static/login.html")
 
 
+@app.get("/register")
+def register_page():
+    return FileResponse("static/register.html")
+
+
+# ── Auth endpoints ────────────────────────────────────────────────────────────
+
 @app.post("/login")
 def login(username: str = Form(...), password: str = Form(...)):
     user = get_user_by_username(username)
@@ -65,12 +82,35 @@ def login(username: str = Form(...), password: str = Form(...)):
     return resp
 
 
+@app.post("/register")
+def register(
+    email: str = Form(...),
+    username: str = Form(...),
+    password: str = Form(...)
+):
+    if not is_in_whitelist(email):
+        return RedirectResponse(url="/register?error=whitelist", status_code=302)
+    if len(password) < 6:
+        return RedirectResponse(url="/register?error=short", status_code=302)
+    if get_user_by_username(username) or get_user_by_email(email):
+        return RedirectResponse(url="/register?error=taken", status_code=302)
+    create_user(username, password, email=email, role="user")
+    return RedirectResponse(url="/login?registered=1", status_code=302)
+
+
 @app.post("/logout")
 def logout():
     resp = RedirectResponse(url="/login", status_code=302)
     resp.delete_cookie("session")
     return resp
 
+
+@app.get("/me")
+def me(user=Depends(require_auth)):
+    return {"username": user["username"], "role": user["role"], "email": user["email"]}
+
+
+# ── Entries ────────────────────────────────────────────────────────────────────
 
 class EntryCreate(BaseModel):
     entry_date: str

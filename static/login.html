@@ -14,12 +14,16 @@
         button { width: 100%; padding: 10px; background: #000; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
         button:hover { opacity: 0.8; }
         .error { color: #c00; font-size: 13px; margin-bottom: 14px; display: none; }
+        .success { color: #060; font-size: 13px; margin-bottom: 14px; display: none; }
+        .register-link { text-align: center; margin-top: 16px; font-size: 13px; color: #555; }
+        .register-link a { color: #000; }
     </style>
 </head>
 <body>
     <div class="card">
         <h1>daylog</h1>
         <div class="error" id="errorMsg">Nesprávne meno alebo heslo</div>
+        <div class="success" id="successMsg">Registrácia úspešná — prihláste sa</div>
         <form method="POST" action="/login">
             <label>Meno</label>
             <input type="text" name="username" autocomplete="username" required>
@@ -29,9 +33,10 @@
         </form>
     </div>
     <script>
-        if (new URLSearchParams(location.search).get('error')) {
-            document.getElementById('errorMsg').style.display = 'block';
-        }
+        const p = new URLSearchParams(location.search);
+        if (p.get('error')) document.getElementById('errorMsg').style.display = 'block';
+        if (p.get('registered')) document.getElementById('successMsg').style.display = 'block';
     </script>
+    <div class="register-link"><a href="/register">Nemáš účet? Zaregistruj sa</a></div>
 </body>
 </html>
