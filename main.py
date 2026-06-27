@@ -4,9 +4,9 @@ from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
 from typing import Optional, List
 from database import (
-    init_db, create_entry, get_entries, get_entry,
-    create_user, get_user_by_username, get_user_by_id, get_user_by_email,
-    set_user_role, is_in_whitelist, add_to_whitelist
+    init_db, create_user, get_user_by_username, get_user_by_id,
+    set_user_role, update_user_password,
+    create_entry, get_entries, get_entry
 )
 from auth import verify_password, create_session_token, decode_session_token
 import json
@@ -17,13 +17,11 @@ SESSION_MAX_AGE = 30 * 24 * 3600
 
 
 def _init_users():
-    add_to_whitelist("jan@daylog.local", added_by="system")
-    add_to_whitelist("eva@daylog.local", added_by="system")
     if not get_user_by_username("jan"):
-        create_user("jan", "jan2026", email="jan@daylog.local", role="admin")
+        create_user("jan", "jan2026", role="admin")
     else:
         set_user_role("jan", "admin")
-    create_user("eva", "eva2026", email="eva@daylog.local", role="user")
+    create_user("katka", "katka2026", role="user")
 
 
 @app.on_event("startup")
@@ -53,8 +51,7 @@ def require_auth(user=Depends(get_session_user)):
 
 @app.get("/")
 def root(session: Optional[str] = Cookie(None)):
-    user_id = decode_session_token(session) if session else None
-    if not user_id:
+    if not (decode_session_token(session) if session else None):
         return RedirectResponse(url="/login", status_code=302)
     return FileResponse("static/index.html")
 
@@ -64,9 +61,11 @@ def login_page():
     return FileResponse("static/login.html")
 
 
-@app.get("/register")
-def register_page():
-    return FileResponse("static/register.html")
+@app.get("/profile")
+def profile_page(session: Optional[str] = Cookie(None)):
+    if not (decode_session_token(session) if session else None):
+        return RedirectResponse(url="/login", status_code=302)
+    return FileResponse("static/profile.html")
 
 
 # ── Auth endpoints ────────────────────────────────────────────────────────────
@@ -82,22 +81,6 @@ def login(username: str = Form(...), password: str = Form(...)):
     return resp
 
 
-@app.post("/register")
-def register(
-    email: str = Form(...),
-    username: str = Form(...),
-    password: str = Form(...)
-):
-    if not is_in_whitelist(email):
-        return RedirectResponse(url="/register?error=whitelist", status_code=302)
-    if len(password) < 6:
-        return RedirectResponse(url="/register?error=short", status_code=302)
-    if get_user_by_username(username) or get_user_by_email(email):
-        return RedirectResponse(url="/register?error=taken", status_code=302)
-    create_user(username, password, email=email, role="user")
-    return RedirectResponse(url="/login?registered=1", status_code=302)
-
-
 @app.post("/logout")
 def logout():
     resp = RedirectResponse(url="/login", status_code=302)
@@ -107,7 +90,22 @@ def logout():
 
 @app.get("/me")
 def me(user=Depends(require_auth)):
-    return {"username": user["username"], "role": user["role"], "email": user["email"]}
+    return {"username": user["username"], "role": user["role"]}
+
+
+class ChangePassword(BaseModel):
+    old_password: str
+    new_password: str
+
+
+@app.post("/change-password")
+def change_password(body: ChangePassword, user=Depends(require_auth)):
+    if not verify_password(body.old_password, user["hashed_password"]):
+        raise HTTPException(status_code=400, detail="Nesprávne staré heslo")
+    if len(body.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Heslo musí mať aspoň 6 znakov")
+    update_user_password(user["id"], body.new_password)
+    return {"ok": True}
 
 
 # ── Entries ────────────────────────────────────────────────────────────────────
