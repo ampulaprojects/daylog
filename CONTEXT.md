@@ -34,6 +34,13 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 
 ## Changelog
 
+### 2026-06-27 (večer)
+- Doména: daylog.bodk8.com → 80.211.201.112 (DNS Websupport)
+- HTTPS: Let's Encrypt certifikát cez certbot
+- nginx config aktualizovaný pre SSL
+- Diktovanie hlasom funkčné na mobile (vyžaduje HTTPS)
+- Ďalší krok: skenovanie fotiek/textu z papiera
+
 ### 2026-06-27
 - Autentifikácia: jan (admin) + katka (user), bcrypt, session cookie 30 dní
 - /login, /logout, /profile (zmena hesla), /me endpoint
