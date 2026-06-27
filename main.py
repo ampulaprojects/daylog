@@ -1,4 +1,6 @@
 from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional, List
 from database import init_db, create_entry, get_entries, get_entry
@@ -12,7 +14,7 @@ def startup():
 
 @app.get("/")
 def root():
-    return {"status": "ok", "app": "daylog"}
+    return FileResponse("static/index.html")
 
 class EntryCreate(BaseModel):
     entry_date: str
@@ -50,3 +52,5 @@ def get_single_entry(entry_id: int):
     entry["tags"] = json.loads(entry["tags"] or "[]")
     entry["llm_tags"] = json.loads(entry["llm_tags"] or "[]")
     return entry
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
