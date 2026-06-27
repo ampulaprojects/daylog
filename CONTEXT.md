@@ -32,9 +32,17 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 - Lokál → VPS: SSH kľúč ed25519 (~/.ssh/id_ed25519), user root
 - VPS → GitHub: deploy key (~/.ssh/daylog_deploy), read-only, len pre repo daylog
 
-## Stav / posledný krok
-- [2026-06-27] FastAPI beží na VPS ako systemd služba (daylog.service), auto-start po reboot
-- [2026-06-27] API dostupné na http://80.211.201.112:8000/
-- [2026-06-27] Stack: Python 3.10 + FastAPI + SQLite + Vanilla JS
-- Ďalší krok: databázová vrstva (SQLite schéma pre záznamy denníka)
-- [2026-06-27] Deploy workflow kompletný a otestovaný
+## Changelog
+
+### 2026-06-27
+- Autentifikácia: jan (admin) + katka (user), bcrypt, session cookie 30 dní
+- /login, /logout, /profile (zmena hesla), /me endpoint
+- Záznamy izolované per užívateľ (user_id v entries)
+- nginx reverse proxy (port 80), uvicorn ako systemd služba
+- Ďalší krok: diktovanie hlasom vo frontende
+
+### 2026-06-26
+- FastAPI beží na VPS ako systemd služba (daylog.service), auto-start po reboot
+- API dostupné na http://80.211.201.112/
+- Stack: Python 3.10 + FastAPI + SQLite + Vanilla JS
+- Deploy workflow kompletný a otestovaný (git push → git pull na VPS)
