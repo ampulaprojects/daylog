@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>daylog — profil</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px 16px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; }
+        h1 { font-size: 20px; }
+        .back { font-size: 13px; color: #555; text-decoration: none; }
+        .back:hover { color: #000; }
+        .info { background: #f8f8f8; border-radius: 8px; padding: 16px; margin-bottom: 28px; }
+        .info-row { display: flex; justify-content: space-between; font-size: 14px; padding: 4px 0; }
+        .label { color: #888; }
+        .role { background: #000; color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 4px; }
+        h2 { font-size: 15px; margin-bottom: 14px; }
+        label { font-size: 13px; color: #555; display: block; margin-bottom: 4px; }
+        input { width: 100%; padding: 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; margin-bottom: 12px; }
+        button { padding: 8px 20px; background: #000; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
+        button:hover { opacity: 0.8; }
+        .msg { font-size: 13px; margin-top: 10px; padding: 8px 12px; border-radius: 6px; display: none; }
+        .msg.ok  { background: #f0fff0; color: #060; border: 1px solid #9d9; }
+        .msg.err { background: #fff0f0; color: #c00; border: 1px solid #fcc; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Profil</h1>
+        <a class="back" href="/">← späť</a>
+    </div>
+
+    <div class="info" id="userInfo">
+        <div class="info-row"><span class="label">Meno</span><span id="uName">…</span></div>
+        <div class="info-row"><span class="label">Rola</span><span id="uRole">…</span></div>
+    </div>
+
+    <h2>Zmena hesla</h2>
+    <label>Staré heslo</label>
+    <input type="password" id="oldPwd">
+    <label>Nové heslo (min. 6 znakov)</label>
+    <input type="password" id="newPwd">
+    <label>Potvrď nové heslo</label>
+    <input type="password" id="newPwd2">
+    <button onclick="changePassword()">Zmeniť heslo</button>
+    <div class="msg ok"  id="msgOk">Heslo bolo úspešne zmenené</div>
+    <div class="msg err" id="msgErr"></div>
+
+    <script>
+        async function loadMe() {
+            const r = await fetch('/me');
+            if (r.status === 401) { location.href = '/login'; return; }
+            const u = await r.json();
+            document.getElementById('uName').textContent = u.username;
+            document.getElementById('uRole').innerHTML = `<span class="role">${u.role}</span>`;
+        }
+
+        async function changePassword() {
+            const old_password = document.getElementById('oldPwd').value;
+            const new_password = document.getElementById('newPwd').value;
+            const new_password2 = document.getElementById('newPwd2').value;
+            const ok  = document.getElementById('msgOk');
+            const err = document.getElementById('msgErr');
+            ok.style.display = 'none';
+            err.style.display = 'none';
+
+            if (new_password !== new_password2) {
+                err.textContent = 'Nové heslá sa nezhodujú';
+                err.style.display = 'block';
+                return;
+            }
+            const r = await fetch('/change-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ old_password, new_password })
+            });
+            if (r.ok) {
+                ok.style.display = 'block';
+                document.getElementById('oldPwd').value = '';
+                document.getElementById('newPwd').value = '';
+                document.getElementById('newPwd2').value = '';
+            } else {
+                const d = await r.json();
+                err.textContent = d.detail || 'Chyba';
+                err.style.display = 'block';
+            }
+        }
+
+        loadMe();
+    </script>
+</body>
+</html>
