@@ -20,6 +20,10 @@
         label { font-size: 13px; color: #555; display: block; margin-bottom: 4px; }
         #status { font-size: 13px; color: green; margin-top: 8px; display: none; }
         .section { margin-bottom: 24px; }
+        .textarea-row { position: relative; }
+        #dictBtn { position: absolute; bottom: 8px; right: 8px; padding: 4px 10px; font-size: 12px; background: #444; border-radius: 4px; }
+        #dictBtn.active { background: #c00; }
+        #dictBtn.hidden { display: none; }
     </style>
 </head>
 <body>
@@ -41,7 +45,10 @@
         </div>
         <div class="form-group">
             <label>Záznam</label>
-            <textarea id="entryText" placeholder="Čo sa stalo..."></textarea>
+            <div class="textarea-row">
+                <textarea id="entryText" placeholder="Čo sa stalo..."></textarea>
+                <button id="dictBtn" type="button" onclick="toggleDictation()">🎤 Diktovať</button>
+            </div>
         </div>
         <div class="form-group">
             <label>Nálada</label>
@@ -111,6 +118,59 @@
         }
 
         loadEntries();
+
+        // ── Diktovanie ──────────────────────────────────────────────────
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const dictBtn = document.getElementById('dictBtn');
+        let recognition = null;
+        let dictating = false;
+
+        if (!SpeechRecognition) {
+            dictBtn.classList.add('hidden');
+        } else {
+            recognition = new SpeechRecognition();
+            recognition.lang = 'sk-SK';
+            recognition.continuous = true;
+            recognition.interimResults = false;
+
+            recognition.onresult = (e) => {
+                const ta = document.getElementById('entryText');
+                for (let i = e.resultIndex; i < e.results.length; i++) {
+                    if (e.results[i].isFinal) {
+                        const t = e.results[i][0].transcript;
+                        ta.value = ta.value ? ta.value + ' ' + t : t;
+                    }
+                }
+            };
+
+            recognition.onend = () => {
+                if (dictating) recognition.start();
+            };
+
+            recognition.onerror = (e) => {
+                if (e.error !== 'aborted') {
+                    dictating = false;
+                    dictBtn.textContent = '🎤 Diktovať';
+                    dictBtn.classList.remove('active');
+                }
+            };
+        }
+
+        function toggleDictation() {
+            if (!recognition) return;
+            if (dictating) {
+                dictating = false;
+                recognition.onend = null;
+                recognition.stop();
+                dictBtn.textContent = '🎤 Diktovať';
+                dictBtn.classList.remove('active');
+            } else {
+                dictating = true;
+                recognition.start();
+                dictBtn.textContent = '⏹ Zastaviť';
+                dictBtn.classList.add('active');
+            }
+        }
     </script>
 </body>
 </html>
