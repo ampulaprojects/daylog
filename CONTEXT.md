@@ -33,5 +33,8 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 - VPS → GitHub: deploy key (~/.ssh/daylog_deploy), read-only, len pre repo daylog
 
 ## Stav / posledný krok
+- [2026-06-27] FastAPI beží na VPS ako systemd služba (daylog.service), auto-start po reboot
+- [2026-06-27] API dostupné na http://80.211.201.112:8000/
+- [2026-06-27] Stack: Python 3.10 + FastAPI + SQLite + Vanilla JS
+- Ďalší krok: databázová vrstva (SQLite schéma pre záznamy denníka)
 - [2026-06-27] Deploy workflow kompletný a otestovaný
-- Ďalší krok: začať stavať aplikáciu daylog
