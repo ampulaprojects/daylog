@@ -23,7 +23,12 @@
     </style>
 </head>
 <body>
-    <h1>daylog</h1>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h1 style="margin-bottom:0">daylog</h1>
+        <form method="POST" action="/logout">
+            <button type="submit" style="background:#eee;color:#333;padding:6px 12px;font-size:13px">Odhlásiť</button>
+        </form>
+    </div>
 
     <div class="section">
         <div class="form-group">
@@ -92,6 +97,7 @@
             const search = document.getElementById('searchInput').value.trim();
             const url = search ? `/entries?search=${encodeURIComponent(search)}` : '/entries';
             const resp = await fetch(url);
+            if (resp.status === 401) { location.href = '/login'; return; }
             const entries = await resp.json();
             const list = document.getElementById('entryList');
             if (!entries.length) { list.innerHTML = '<p style="color:#888;font-size:14px;margin-top:12px">Žiadne záznamy</p>'; return; }
