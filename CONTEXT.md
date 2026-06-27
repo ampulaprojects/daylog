@@ -21,11 +21,17 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 - Cesta: C:\Users\jan.tupek\projects\daylog
 - VS Code + GitHub autorizácia cez token
 
-## Workflow (cieľový stav)
-- Vývoj lokálne
-- Push na GitHub: git push
-- Deploy na VPS: (zatiaľ nenastavené)
+## Workflow
+- Vývoj lokálne v C:\Users\jan.tupek\projects\daylog
+- Deploy: .\deploy.ps1 -msg "popis zmeny"
+  - commitne a pushne na GitHub
+  - VPS si stiahne zmeny cez git pull
+- VPS repo: /var/www/daylog (naklonované z GitHub cez deploy key)
+
+## SSH
+- Lokál → VPS: SSH kľúč ed25519 (~/.ssh/id_ed25519), user root
+- VPS → GitHub: deploy key (~/.ssh/daylog_deploy), read-only, len pre repo daylog
 
 ## Stav / posledný krok
-- [2026-06-26] Inicializovaný projekt, SSH na VPS funguje, GitHub repo vytvorené a napojené
-- Ďalší krok: nastaviť deploy workflow lokál → VPS
+- [2026-06-27] Deploy workflow kompletný a otestovaný
+- Ďalší krok: začať stavať aplikáciu daylog
