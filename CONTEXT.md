@@ -37,9 +37,10 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 ### 2026-06-27
 - Autentifikácia: jan (admin) + katka (user), bcrypt, session cookie 30 dní
 - /login, /logout, /profile (zmena hesla), /me endpoint
-- Záznamy izolované per užívateľ (user_id v entries)
-- nginx reverse proxy (port 80), uvicorn ako systemd služba
-- Ďalší krok: diktovanie hlasom vo frontende
+- Záznamy zdieľané (shared) s author attribution (LEFT JOIN users)
+- nginx reverse proxy (port 80/443), uvicorn ako systemd služba
+- Diktovanie hlasom: Web Speech API, sk-SK, toggle tlačidlo v UI
+- HTTPS: Let's Encrypt certbot, doména daylog.bodk8.com, auto-renew
 
 ### 2026-06-26
 - FastAPI beží na VPS ako systemd služba (daylog.service), auto-start po reboot
