@@ -149,33 +149,36 @@ def update_llm_analysis(entry_id, analysis, llm_tags, llm_mood, model_name):
     conn.close()
 
 
-def get_entries(search=None, mood=None, limit=50, user_id=None):
+def get_entries(search=None, mood=None, limit=50):
     conn = get_db()
-    query = "SELECT * FROM entries WHERE 1=1"
+    query = """
+        SELECT e.*, u.username AS author
+        FROM entries e
+        LEFT JOIN users u ON e.user_id = u.id
+        WHERE 1=1
+    """
     params = []
-    if user_id is not None:
-        query += " AND user_id = ?"
-        params.append(user_id)
     if search:
-        query += " AND text LIKE ?"
+        query += " AND e.text LIKE ?"
         params.append(f"%{search}%")
     if mood:
-        query += " AND mood = ?"
+        query += " AND e.mood = ?"
         params.append(mood)
-    query += " ORDER BY entry_date DESC LIMIT ?"
+    query += " ORDER BY e.entry_date DESC LIMIT ?"
     params.append(limit)
     rows = conn.execute(query, params).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
 
-def get_entry(entry_id, user_id=None):
+def get_entry(entry_id):
     conn = get_db()
-    if user_id is not None:
-        row = conn.execute(
-            "SELECT * FROM entries WHERE id = ? AND user_id = ?", (entry_id, user_id)
-        ).fetchone()
-    else:
-        row = conn.execute("SELECT * FROM entries WHERE id = ?", (entry_id,)).fetchone()
+    row = conn.execute(
+        """SELECT e.*, u.username AS author
+           FROM entries e
+           LEFT JOIN users u ON e.user_id = u.id
+           WHERE e.id = ?""",
+        (entry_id,)
+    ).fetchone()
     conn.close()
     return dict(row) if row else None

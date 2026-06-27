@@ -103,7 +103,7 @@
             if (!entries.length) { list.innerHTML = '<p style="color:#888;font-size:14px;margin-top:12px">Žiadne záznamy</p>'; return; }
             list.innerHTML = entries.map(e => `
                 <div class="entry">
-                    <div class="entry-date">${e.entry_date}${e.mood ? ' · ' + e.mood : ''}</div>
+                    <div class="entry-date">${e.entry_date}${e.mood ? ' · ' + e.mood : ''}${e.author ? ' · <strong>' + e.author + '</strong>' : ''}</div>
                     ${e.title ? `<strong style="font-size:14px">${e.title}</strong>` : ''}
                     <div class="entry-text">${e.text}</div>
                 </div>
