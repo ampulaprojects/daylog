@@ -7,41 +7,70 @@
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: system-ui, sans-serif; max-width: 700px; margin: 0 auto; padding: 16px; }
-        h1 { font-size: 20px; margin-bottom: 16px; }
+        h1 { font-size: 20px; }
+        h2 { font-size: 16px; margin-bottom: 12px; }
         textarea { width: 100%; height: 120px; padding: 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; resize: vertical; }
-        input { width: 100%; padding: 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; margin-bottom: 8px; }
+        input[type=text], input[type=date], input[type=time] { width: 100%; padding: 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; }
         button { padding: 8px 16px; background: #000; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
         button:hover { opacity: 0.8; }
-        .entry { border: 1px solid #eee; border-radius: 6px; padding: 12px; margin-bottom: 10px; }
-        .entry-date { font-size: 12px; color: #888; margin-bottom: 4px; }
-        .entry-mood { font-size: 12px; color: #555; }
-        .entry-text { font-size: 14px; margin-top: 6px; white-space: pre-wrap; }
+        button:disabled { opacity: 0.45; cursor: default; }
+        .btn-ghost { background: #eee; color: #333; }
+        .section { margin-bottom: 24px; }
         .form-group { margin-bottom: 10px; }
         label { font-size: 13px; color: #555; display: block; margin-bottom: 4px; }
         #status { font-size: 13px; color: green; margin-top: 8px; display: none; }
-        .section { margin-bottom: 24px; }
         .textarea-row { position: relative; }
         #dictBtn { position: absolute; bottom: 8px; right: 8px; padding: 4px 10px; font-size: 12px; background: #444; border-radius: 4px; }
         #dictBtn.active { background: #c00; }
         #dictBtn.hidden { display: none; }
+
+        /* review */
+        #reviewSection { display: none; }
+        .event-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #eee; border-radius: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+        .badge { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; color: #fff; white-space: nowrap; flex-shrink: 0; }
+        .badge-liek      { background: #2563eb; }
+        .badge-nalada    { background: #d97706; }
+        .badge-spravanie { background: #7c3aed; }
+        .badge-jedlo     { background: #16a34a; }
+        .badge-aktivita  { background: #0891b2; }
+        .badge-spatok    { background: #1e40af; }
+        .badge-fyzicke   { background: #dc2626; }
+        .badge-poznamka  { background: #6b7280; }
+        .ev-time  { font-size: 13px; color: #888; min-width: 38px; flex-shrink: 0; }
+        .ev-value { font-size: 14px; flex: 1; }
+        .ev-note  { font-size: 12px; color: #aaa; font-style: italic; }
+        .del-btn  { background: none; color: #bbb; border: none; padding: 0 4px; font-size: 16px; line-height: 1; cursor: pointer; border-radius: 3px; margin-left: auto; }
+        .del-btn:hover { background: #fee2e2; color: #dc2626; }
+        .review-meta { font-size: 13px; color: #888; margin-bottom: 10px; }
+        .review-actions { display: flex; gap: 8px; margin-top: 12px; }
+
+        /* entry list */
+        .entry { border: 1px solid #eee; border-radius: 6px; padding: 12px; margin-bottom: 10px; }
+        .entry-date { font-size: 12px; color: #888; margin-bottom: 4px; }
+        .entry-text { font-size: 14px; white-space: pre-wrap; }
+        #searchInput { margin-bottom: 10px; }
     </style>
 </head>
 <body>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-        <h1 style="margin-bottom:0">daylog</h1>
-        <form method="POST" action="/logout">
-            <button type="submit" style="background:#eee;color:#333;padding:6px 12px;font-size:13px">Odhlásiť</button>
-        </form>
+        <h1>daylog</h1>
+        <div style="display:flex;gap:10px;align-items:center">
+            <a href="/profile" style="font-size:13px;color:#888;text-decoration:none">Profil</a>
+            <form method="POST" action="/logout">
+                <button type="submit" class="btn-ghost" style="padding:6px 12px;font-size:13px">Odhlásiť</button>
+            </form>
+        </div>
     </div>
 
-    <div class="section">
+    <!-- Form -->
+    <div class="section" id="formSection">
         <div class="form-group">
             <label>Dátum</label>
             <input type="date" id="entryDate">
         </div>
         <div class="form-group">
-            <label>Nadpis (voliteľné)</label>
-            <input type="text" id="entryTitle" placeholder="napr. ranná epizóda...">
+            <label>Čas záznamu <span style="color:#bbb">(voliteľné)</span></label>
+            <input type="time" id="entryTime">
         </div>
         <div class="form-group">
             <label>Záznam</label>
@@ -50,55 +79,151 @@
                 <button id="dictBtn" type="button" onclick="toggleDictation()">🎤 Diktovať</button>
             </div>
         </div>
-        <div class="form-group">
-            <label>Nálada</label>
-            <input type="text" id="entryMood" placeholder="napr. dobrý deň, epizóda...">
-        </div>
-        <button onclick="saveEntry()">Uložiť</button>
-        <div id="status">✓ Uložené</div>
+        <button id="saveBtn" onclick="saveEntry()">Uložiť</button>
+        <div id="status"></div>
     </div>
 
+    <!-- Review -->
+    <div class="section" id="reviewSection">
+        <h2>Navrhnuté eventy</h2>
+        <div class="review-meta" id="reviewMeta"></div>
+        <div id="eventList"></div>
+        <div class="review-actions">
+            <button id="confirmBtn" onclick="confirmEntry()">Potvrdiť a uložiť</button>
+            <button class="btn-ghost" onclick="goBack()">← Späť</button>
+        </div>
+    </div>
+
+    <!-- Entry list -->
     <div class="section">
-        <input type="text" id="searchInput" placeholder="Hľadať..." oninput="loadEntries()">
+        <input type="text" id="searchInput" placeholder="Hľadať...">
         <div id="entryList"></div>
     </div>
 
     <script>
-        const API = '';
+        let pendingData = null;
+        let pendingEvents = [];
+        let currentSource = 'typed';
 
         function today() {
             return new Date().toISOString().split('T')[0];
         }
 
         document.getElementById('entryDate').value = today();
+        document.getElementById('searchInput').addEventListener('input', loadEntries);
+
+        // ── Save flow ────────────────────────────────────────────────────
 
         async function saveEntry() {
             const text = document.getElementById('entryText').value.trim();
             if (!text) return alert('Zadaj text záznamu');
-            const body = {
-                entry_date: document.getElementById('entryDate').value,
-                title: document.getElementById('entryTitle').value.trim() || null,
-                text,
-                mood: document.getElementById('entryMood').value.trim() || null,
-                tags: [],
-                source: 'typed'
-            };
-            const resp = await fetch(`${API}/entries`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            });
-            if (resp.ok) {
-                document.getElementById('entryText').value = '';
-                document.getElementById('entryTitle').value = '';
-                document.getElementById('entryMood').value = '';
-                document.getElementById('entryDate').value = today();
-                const s = document.getElementById('status');
-                s.style.display = 'block';
-                setTimeout(() => s.style.display = 'none', 2000);
-                loadEntries();
+
+            const entryDate = document.getElementById('entryDate').value;
+            const entryTime = document.getElementById('entryTime').value || null;
+
+            pendingData = { entry_date: entryDate, entry_time: entryTime, text, source: currentSource };
+
+            const btn = document.getElementById('saveBtn');
+            btn.disabled = true;
+            btn.textContent = 'Analyzujem...';
+
+            try {
+                const resp = await fetch('/entries/extract', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, entry_date: entryDate, entry_time: entryTime })
+                });
+                if (resp.status === 401) { location.href = '/login'; return; }
+                if (!resp.ok) throw new Error(await resp.text());
+
+                const data = await resp.json();
+                pendingEvents = data.events;
+                showReview();
+            } catch (e) {
+                alert('Chyba extrakcie: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Uložiť';
             }
         }
+
+        function showReview() {
+            document.getElementById('formSection').style.display = 'none';
+            document.getElementById('reviewSection').style.display = 'block';
+            renderEvents();
+        }
+
+        function renderEvents() {
+            const n = pendingEvents.length;
+            document.getElementById('reviewMeta').textContent =
+                `${pendingData.entry_date}${pendingData.entry_time ? ' ' + pendingData.entry_time : ''} · ${n} event${n !== 1 ? 'ov' : ''}`;
+
+            const list = document.getElementById('eventList');
+            if (!n) {
+                list.innerHTML = '<p style="color:#888;font-size:14px">Žiadne eventy — záznam sa uloží bez eventov.</p>';
+                return;
+            }
+            list.innerHTML = pendingEvents.map((ev, i) => `
+                <div class="event-item">
+                    <span class="badge badge-${ev.event_type}">${ev.event_type}</span>
+                    <span class="ev-time">${ev.event_time || '—'}</span>
+                    <span class="ev-value">${ev.value}</span>
+                    ${ev.note ? `<span class="ev-note">${ev.note}</span>` : ''}
+                    <button class="del-btn" onclick="removeEvent(${i})" title="Zmazať">✕</button>
+                </div>
+            `).join('');
+        }
+
+        function removeEvent(i) {
+            pendingEvents.splice(i, 1);
+            renderEvents();
+        }
+
+        async function confirmEntry() {
+            const btn = document.getElementById('confirmBtn');
+            btn.disabled = true;
+            btn.textContent = 'Ukladám...';
+
+            try {
+                const resp = await fetch('/entries/confirm', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...pendingData, events: pendingEvents })
+                });
+                if (resp.status === 401) { location.href = '/login'; return; }
+                if (!resp.ok) throw new Error(await resp.text());
+
+                const data = await resp.json();
+
+                document.getElementById('reviewSection').style.display = 'none';
+                document.getElementById('formSection').style.display = 'block';
+                document.getElementById('entryText').value = '';
+                document.getElementById('entryTime').value = '';
+                document.getElementById('entryDate').value = today();
+                currentSource = 'typed';
+
+                const s = document.getElementById('status');
+                s.textContent = `✓ Uložené — entry #${data.entry_id}, ${data.event_count} eventov`;
+                s.style.display = 'block';
+                setTimeout(() => s.style.display = 'none', 4000);
+
+                pendingData = null;
+                pendingEvents = [];
+                loadEntries();
+            } catch (e) {
+                alert('Chyba uloženia: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Potvrdiť a uložiť';
+            }
+        }
+
+        function goBack() {
+            document.getElementById('reviewSection').style.display = 'none';
+            document.getElementById('formSection').style.display = 'block';
+        }
+
+        // ── Entry list ───────────────────────────────────────────────────
 
         async function loadEntries() {
             const search = document.getElementById('searchInput').value.trim();
@@ -107,11 +232,13 @@
             if (resp.status === 401) { location.href = '/login'; return; }
             const entries = await resp.json();
             const list = document.getElementById('entryList');
-            if (!entries.length) { list.innerHTML = '<p style="color:#888;font-size:14px;margin-top:12px">Žiadne záznamy</p>'; return; }
+            if (!entries.length) {
+                list.innerHTML = '<p style="color:#888;font-size:14px">Žiadne záznamy</p>';
+                return;
+            }
             list.innerHTML = entries.map(e => `
                 <div class="entry">
-                    <div class="entry-date">${e.entry_date}${e.mood ? ' · ' + e.mood : ''}${e.author ? ' · <strong>' + e.author + '</strong>' : ''}</div>
-                    ${e.title ? `<strong style="font-size:14px">${e.title}</strong>` : ''}
+                    <div class="entry-date">${e.entry_date}${e.entry_time ? ' ' + e.entry_time : ''}${e.author ? ' · <strong>' + e.author + '</strong>' : ''}</div>
                     <div class="entry-text">${e.text}</div>
                 </div>
             `).join('');
@@ -119,7 +246,8 @@
 
         loadEntries();
 
-        // ── Diktovanie ──────────────────────────────────────────────────
+        // ── Diktovanie ───────────────────────────────────────────────────
+
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         const dictBtn = document.getElementById('dictBtn');
         let recognition = null;
@@ -139,13 +267,12 @@
                     if (e.results[i].isFinal) {
                         const t = e.results[i][0].transcript;
                         ta.value = ta.value ? ta.value + ' ' + t : t;
+                        currentSource = 'voice';
                     }
                 }
             };
 
-            recognition.onend = () => {
-                if (dictating) recognition.start();
-            };
+            recognition.onend = () => { if (dictating) recognition.start(); };
 
             recognition.onerror = (e) => {
                 if (e.error !== 'aborted') {
@@ -166,6 +293,7 @@
                 dictBtn.classList.remove('active');
             } else {
                 dictating = true;
+                currentSource = 'voice';
                 recognition.start();
                 dictBtn.textContent = '⏹ Zastaviť';
                 dictBtn.classList.add('active');
