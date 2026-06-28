@@ -271,6 +271,37 @@ def update_event(event_id, **kwargs):
     conn.close()
 
 
+def delete_entry(entry_id: int):
+    conn = get_db()
+    conn.execute("DELETE FROM events WHERE entry_id = ?", (entry_id,))
+    conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
+    conn.commit()
+    conn.close()
+
+
+def update_entry_text(entry_id: int, text: str):
+    conn = get_db()
+    conn.execute("UPDATE entries SET text = ? WHERE id = ?", (text, entry_id))
+    conn.commit()
+    conn.close()
+
+
+def replace_entry_events(entry_id: int, user_id: int, events: list):
+    conn = get_db()
+    conn.execute("DELETE FROM events WHERE entry_id = ?", (entry_id,))
+    now = datetime.utcnow().isoformat()
+    for ev in events:
+        conn.execute(
+            """INSERT INTO events
+               (entry_id, user_id, event_time, event_type, value, note, confirmed, created_at)
+               VALUES (?,?,?,?,?,?,1,?)""",
+            (entry_id, user_id, ev.get("event_time"), ev.get("event_type"),
+             ev.get("value"), ev.get("note"), now)
+        )
+    conn.commit()
+    conn.close()
+
+
 def delete_event(event_id):
     conn = get_db()
     conn.execute("DELETE FROM events WHERE id = ?", (event_id,))

@@ -9,7 +9,7 @@
         body { font-family: system-ui, sans-serif; max-width: 700px; margin: 0 auto; padding: 16px; }
         h1 { font-size: 20px; }
         h2 { font-size: 15px; font-weight: 600; margin-bottom: 10px; }
-        textarea { width: 100%; height: 120px; padding: 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; resize: vertical; }
+        textarea { width: 100%; padding: 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; resize: vertical; font-family: inherit; }
         input[type=text], input[type=date], input[type=time] { width: 100%; padding: 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; }
         button { padding: 8px 16px; background: #000; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
         button:hover { opacity: 0.8; }
@@ -25,7 +25,7 @@
         #dictBtn.active { background: #c00; }
         #dictBtn.hidden { display: none; }
 
-        /* badges — statické spany */
+        /* ── Badges ─────────────────────────────────────────────────────── */
         .badge { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; color: #fff; white-space: nowrap; flex-shrink: 0; }
         .badge-liek      { background: #2563eb; }
         .badge-nalada    { background: #d97706; }
@@ -36,22 +36,29 @@
         .badge-fyzicke   { background: #dc2626; }
         .badge-poznamka  { background: #6b7280; }
 
-        /* review */
+        /* ── Review panel ───────────────────────────────────────────────── */
         #reviewSection { display: none; }
         .review-meta { font-size: 13px; color: #888; margin-bottom: 12px; }
 
         /* cleaned text */
         .cleaned-box { border: 1px solid #d1fae5; background: #f0fdf4; border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
         .cleaned-label { font-size: 12px; font-weight: 600; color: #16a34a; margin-bottom: 6px; }
-        .cleaned-preview { font-size: 14px; color: #1a1a1a; white-space: pre-wrap; margin-bottom: 8px; }
-        .cleaned-actions { display: flex; gap: 6px; }
+        .cleaned-textarea { width: 100%; min-height: 80px; resize: vertical; border: 1px solid #a7f3d0; border-radius: 4px; padding: 8px; font-size: 14px; font-family: inherit; background: transparent; }
+        .cleaned-textarea:focus { outline: none; border-color: #16a34a; }
+        .cleaned-actions { display: flex; gap: 6px; margin-top: 8px; }
         .cleaned-accepted { display: none; align-items: center; gap: 8px; font-size: 13px; color: #16a34a; margin-bottom: 12px; }
 
-        /* editable event rows */
+        /* edit entry text box */
+        .edit-text-box { border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; background: #fafafa; }
+        .edit-text-label { font-size: 12px; font-weight: 600; color: #6b7280; margin-bottom: 6px; }
+        .edit-text-area { background: #fff; min-height: 70px; }
+
+        /* event rows — select badge + inputs
+           DÔLEŽITÉ: .event-item .input-X má špecificitu (0,2,0)
+           čo je viac ako input[type=X] = (0,1,1)
+           → preto width/padding nie sú prepísané globálnym CSS */
         .event-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 6px; }
 
-        /* select ako farebný badge s viditeľnou šípkou
-           KĽÚČ: background-color (nie shorthand 'background') — shorthand by resetoval background-image šípky */
         .input-type {
             font-size: 11px; font-weight: 600;
             padding: 4px 22px 4px 8px; border-radius: 4px;
@@ -61,6 +68,7 @@
             background-repeat: no-repeat; background-position: right 5px center; background-size: 9px;
             -webkit-appearance: none; appearance: none;
         }
+        /* background-color (nie shorthand) — zachová background-image šípku */
         .input-type.badge-liek      { background-color: #2563eb; }
         .input-type.badge-nalada    { background-color: #d97706; }
         .input-type.badge-spravanie { background-color: #7c3aed; }
@@ -71,38 +79,43 @@
         .input-type.badge-poznamka  { background-color: #6b7280; }
         .input-type option { background: #333; color: #fff; }
 
-        /* inputy s viditeľným borderom — jasne editovateľné */
-        .input-time {
-            width: 82px; flex-shrink: 0;
+        /* Použitie .event-item .input-X prekoná globálne input[type=X] { width:100% } */
+        .event-item .input-time {
+            width: 86px; flex-shrink: 0;
             border: 1px solid #d1d5db; border-radius: 4px;
             font-size: 13px; color: #555; padding: 3px 6px; background: #fff;
         }
-        .input-value {
-            flex: 1; min-width: 0;
+        .event-item .input-value {
+            flex: 1; min-width: 80px;
             border: 1px solid #d1d5db; border-radius: 4px;
             font-size: 14px; color: #111; padding: 3px 6px; background: #fff;
         }
-        .input-note {
-            width: 150px; flex-shrink: 0;
+        .event-item .input-note {
+            width: 160px; flex-shrink: 0;
             border: 1px solid #e5e7eb; border-radius: 4px;
             font-size: 12px; color: #9ca3af; padding: 3px 6px; background: #fff;
             font-style: italic;
         }
-        .input-time:focus, .input-value:focus, .input-note:focus {
-            outline: none; border-color: #6b7280; box-shadow: 0 0 0 2px rgba(107,114,128,.15);
-        }
-        .input-note::placeholder { color: #d1d5db; }
+        .event-item .input-time:focus,
+        .event-item .input-value:focus,
+        .event-item .input-note:focus { outline: none; border-color: #6b7280; }
+        .event-item .input-note::placeholder { color: #d1d5db; font-style: italic; }
 
         .del-btn { background: none; color: #d1d5db; border: none; padding: 2px 5px; font-size: 15px; cursor: pointer; border-radius: 3px; flex-shrink: 0; }
         .del-btn:hover { background: #fee2e2; color: #dc2626; }
         .review-actions { display: flex; gap: 8px; margin-top: 12px; }
 
-        /* entry list */
+        /* ── Entry list ─────────────────────────────────────────────────── */
         .entry { border: 1px solid #eee; border-radius: 6px; padding: 12px; margin-bottom: 10px; }
-        .entry-meta { font-size: 12px; color: #888; margin-bottom: 5px; }
+        .entry-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px; }
+        .entry-meta { font-size: 12px; color: #888; }
+        .entry-btns { display: flex; gap: 4px; flex-shrink: 0; }
+        .btn-edit-entry, .btn-del-entry { background: none; border: 1px solid #e5e7eb; border-radius: 3px; font-size: 11px; padding: 2px 7px; cursor: pointer; color: #aaa; }
+        .btn-edit-entry:hover { background: #f5f5f5; color: #333; border-color: #ccc; }
+        .btn-del-entry:hover  { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
         .entry-text { font-size: 14px; white-space: pre-wrap; color: #1a1a1a; }
         .entry-events { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #f0f0f0; }
-        .ev-pill { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #555; background: #f9f9f9; border: 1px solid #eee; border-radius: 4px; padding: 2px 6px; }
+        .ev-pill { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #555; background: #f9f9f9; border: 1px solid #eee; border-radius: 4px; padding: 2px 6px; }
         .ev-t { color: #888; }
         .ev-n { color: #aaa; font-style: italic; }
         #searchInput { margin-bottom: 10px; }
@@ -119,7 +132,7 @@
         </div>
     </div>
 
-    <!-- Form -->
+    <!-- ── Formulár ───────────────────────────────────────────────────────── -->
     <div class="section" id="formSection">
         <div class="form-group">
             <label>Dátum</label>
@@ -132,7 +145,7 @@
         <div class="form-group">
             <label>Záznam</label>
             <div class="textarea-row">
-                <textarea id="entryText" placeholder="Čo sa stalo..."></textarea>
+                <textarea id="entryText" rows="5" placeholder="Čo sa stalo..."></textarea>
                 <button id="dictBtn" type="button" onclick="toggleDictation()">🎤 Diktovať</button>
             </div>
         </div>
@@ -140,15 +153,15 @@
         <div id="status"></div>
     </div>
 
-    <!-- Review -->
+    <!-- ── Review / Edit panel ────────────────────────────────────────────── -->
     <div class="section" id="reviewSection">
-        <h2>Navrhnuté eventy</h2>
+        <h2 id="reviewTitle">Navrhnuté eventy</h2>
         <div class="review-meta" id="reviewMeta"></div>
 
-        <!-- Cleaned text suggestion -->
+        <!-- Navrhovaný text (iba nový záznam) -->
         <div class="cleaned-box" id="cleanedSection" style="display:none">
             <div class="cleaned-label">Navrhovaný text:</div>
-            <div class="cleaned-preview" id="cleanedPreview"></div>
+            <textarea class="cleaned-textarea" id="cleanedPreview" rows="4"></textarea>
             <div class="cleaned-actions">
                 <button class="btn-sm" onclick="acceptCleaned()">Prijať</button>
                 <button class="btn-ghost btn-sm" onclick="rejectCleaned()">Zamietnuť</button>
@@ -159,14 +172,21 @@
             <button class="btn-ghost btn-sm" onclick="revertCleaned()">Vrátiť pôvodný</button>
         </div>
 
+        <!-- Text záznamu (iba edit mode) -->
+        <div class="edit-text-box" id="editTextSection" style="display:none">
+            <div class="edit-text-label">Text záznamu</div>
+            <textarea class="edit-text-area" id="editEntryText" rows="4"></textarea>
+        </div>
+
         <div id="eventList"></div>
+
         <div class="review-actions">
             <button id="confirmBtn" onclick="confirmEntry()">Potvrdiť a uložiť</button>
             <button class="btn-ghost" onclick="goBack()">← Späť</button>
         </div>
     </div>
 
-    <!-- Entry list -->
+    <!-- ── Zoznam záznamov ────────────────────────────────────────────────── -->
     <div class="section">
         <input type="text" id="searchInput" placeholder="Hľadať...">
         <div id="entryList"></div>
@@ -174,22 +194,29 @@
 
     <script>
         const TYPES = ['liek','nalada','spravanie','jedlo','aktivita','spatok','fyzicke','poznamka'];
+        const TYPE_LABELS = {
+            liek: 'liek', nalada: 'nálada', spravanie: 'správanie',
+            jedlo: 'jedlo', aktivita: 'aktivita', spatok: 'spánok',
+            fyzicke: 'fyzické', poznamka: 'poznámka'
+        };
 
-        let pendingData = null;
-        let cleanedText = null;
-        let usingCleanedText = false;
+        let loadedEntries = [];
+        let pendingData   = null;
+        let editingId     = null;   // null = nový záznam, number = edit existujúceho
+        let cleanedText   = null;
+        let usingCleaned  = false;
         let currentSource = 'typed';
 
         function today() { return new Date().toISOString().split('T')[0]; }
         function esc(s) {
             if (!s) return '';
-            return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+            return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
         }
 
         document.getElementById('entryDate').value = today();
         document.getElementById('searchInput').addEventListener('input', loadEntries);
 
-        // ── Save flow ────────────────────────────────────────────────────
+        // ── Nový záznam ──────────────────────────────────────────────────────
 
         async function saveEntry() {
             const text = document.getElementById('entryText').value.trim();
@@ -199,45 +226,73 @@
             pendingData = { entry_date: entryDate, entry_time: entryTime, text, source: currentSource };
 
             const btn = document.getElementById('saveBtn');
-            btn.disabled = true;
-            btn.textContent = 'Analyzujem...';
+            btn.disabled = true; btn.textContent = 'Analyzujem...';
             try {
                 const resp = await fetch('/entries/extract', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ text, entry_date: entryDate, entry_time: entryTime })
                 });
                 if (resp.status === 401) { location.href = '/login'; return; }
                 if (!resp.ok) throw new Error(await resp.text());
                 const data = await resp.json();
-                showReview(data);
-            } catch (e) {
-                alert('Chyba extrakcie: ' + e.message);
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Uložiť';
-            }
+                showReview(data.events, data.cleaned_text);
+            } catch(e) { alert('Chyba extrakcie: ' + e.message); }
+            finally { btn.disabled = false; btn.textContent = 'Uložiť'; }
         }
 
-        function showReview(data) {
-            cleanedText = data.cleaned_text || null;
-            usingCleanedText = false;
+        function showReview(events, ct) {
+            editingId = null;
+            cleanedText = ct || null;
+            usingCleaned = false;
 
             document.getElementById('formSection').style.display = 'none';
             document.getElementById('reviewSection').style.display = 'block';
+            document.getElementById('reviewTitle').textContent = 'Navrhnuté eventy';
+            document.getElementById('confirmBtn').textContent = 'Potvrdiť a uložiť';
+            document.getElementById('editTextSection').style.display = 'none';
+            document.getElementById('cleanedAccepted').style.display = 'none';
 
-            renderEventList(data.events);
+            renderEventList(events);
 
-            const ct = cleanedText;
             const showCt = ct && ct.trim() !== pendingData.text.trim();
             document.getElementById('cleanedSection').style.display = showCt ? 'block' : 'none';
-            document.getElementById('cleanedAccepted').style.display = 'none';
-            if (showCt) document.getElementById('cleanedPreview').textContent = ct;
+            if (showCt) document.getElementById('cleanedPreview').value = ct;
         }
+
+        // ── Edit existujúceho záznamu ────────────────────────────────────────
+
+        function openEdit(entryId) {
+            const entry = loadedEntries.find(e => e.id === entryId);
+            if (!entry) return;
+            editingId = entryId;
+            pendingData = { entry_date: entry.entry_date, entry_time: entry.entry_time,
+                            text: entry.text, source: entry.source || 'typed' };
+            cleanedText = null; usingCleaned = false;
+
+            document.getElementById('formSection').style.display = 'none';
+            document.getElementById('reviewSection').style.display = 'block';
+            document.getElementById('reviewTitle').textContent = `Upraviť — ${entry.entry_date}`;
+            document.getElementById('confirmBtn').textContent = 'Uložiť zmeny';
+            document.getElementById('cleanedSection').style.display = 'none';
+            document.getElementById('cleanedAccepted').style.display = 'none';
+
+            document.getElementById('editEntryText').value = entry.text;
+            document.getElementById('editTextSection').style.display = 'block';
+
+            renderEventList(entry.events || []);
+        }
+
+        async function deleteEntry(entryId) {
+            if (!confirm('Zmazať celý záznam aj so všetkými eventmi?')) return;
+            const resp = await fetch(`/entries/${entryId}`, { method: 'DELETE' });
+            if (resp.ok || resp.status === 204) loadEntries();
+        }
+
+        // ── Review panel helpers ─────────────────────────────────────────────
 
         function typeOptions(selected) {
             return TYPES.map(t =>
-                `<option value="${t}"${t === selected ? ' selected' : ''}>${t}</option>`
+                `<option value="${t}"${t === selected ? ' selected' : ''}>${TYPE_LABELS[t]}</option>`
             ).join('');
         }
 
@@ -248,7 +303,7 @@
 
             const list = document.getElementById('eventList');
             if (!n) {
-                list.innerHTML = '<p style="color:#888;font-size:14px;margin-bottom:8px">Žiadne eventy — záznam sa uloží bez eventov.</p>';
+                list.innerHTML = '<p style="color:#888;font-size:14px;margin-bottom:8px">Žiadne eventy.</p>';
                 return;
             }
             list.innerHTML = events.map(ev => `
@@ -257,12 +312,12 @@
                             onchange="this.className='input-type badge-'+this.value">
                         ${typeOptions(ev.event_type)}
                     </select>
-                    <input type="time" class="input-time" value="${esc(ev.event_time || '')}">
-                    <input type="text" class="input-value" value="${esc(ev.value)}">
-                    <input type="text" class="input-note" placeholder="poznámka..." value="${esc(ev.note || '')}">
+                    <input type="time"  class="input-time"  value="${esc(ev.event_time || '')}">
+                    <input type="text"  class="input-value" value="${esc(ev.value)}">
+                    <input type="text"  class="input-note"  placeholder="poznámka..." value="${esc(ev.note || '')}">
                     <button class="del-btn"
                             onclick="this.closest('.event-item').remove(); updateReviewMeta()"
-                            title="Zmazať">✕</button>
+                            title="Odstrániť">✕</button>
                 </div>
             `).join('');
         }
@@ -275,84 +330,105 @@
 
         function gatherEvents() {
             return Array.from(document.querySelectorAll('#eventList .event-item')).map(row => ({
-                event_time: row.querySelector('.input-time').value || null,
+                event_time: row.querySelector('.input-time').value  || null,
                 event_type: row.querySelector('.input-type').value,
-                value: row.querySelector('.input-value').value.trim(),
-                note: row.querySelector('.input-note').value.trim() || null,
+                value:      row.querySelector('.input-value').value.trim(),
+                note:       row.querySelector('.input-note').value.trim() || null,
             })).filter(ev => ev.value);
         }
 
-        // ── Cleaned text ─────────────────────────────────────────────────
+        // ── Cleaned text ─────────────────────────────────────────────────────
 
         function acceptCleaned() {
-            usingCleanedText = true;
+            usingCleaned = true;
             document.getElementById('cleanedSection').style.display = 'none';
-            const el = document.getElementById('cleanedAccepted');
-            el.style.display = 'flex';
+            document.getElementById('cleanedAccepted').style.display = 'flex';
         }
-
         function rejectCleaned() {
             document.getElementById('cleanedSection').style.display = 'none';
         }
-
         function revertCleaned() {
-            usingCleanedText = false;
+            usingCleaned = false;
             document.getElementById('cleanedAccepted').style.display = 'none';
             document.getElementById('cleanedSection').style.display = 'block';
         }
 
-        // ── Confirm / Back ───────────────────────────────────────────────
+        // ── Potvrdiť / Späť ──────────────────────────────────────────────────
 
         async function confirmEntry() {
             const btn = document.getElementById('confirmBtn');
-            btn.disabled = true;
-            btn.textContent = 'Ukladám...';
+            btn.disabled = true; btn.textContent = 'Ukladám...';
             try {
-                const textToSave = usingCleanedText && cleanedText ? cleanedText : pendingData.text;
-                const resp = await fetch('/entries/confirm', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ...pendingData, text: textToSave, events: gatherEvents() })
-                });
+                const events = gatherEvents();
+                let textToSave;
+                if (editingId) {
+                    textToSave = document.getElementById('editEntryText').value.trim() || pendingData.text;
+                } else {
+                    textToSave = usingCleaned
+                        ? document.getElementById('cleanedPreview').value
+                        : pendingData.text;
+                }
+
+                let resp, data;
+                if (editingId) {
+                    resp = await fetch(`/entries/${editingId}`, {
+                        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ text: textToSave, events })
+                    });
+                } else {
+                    resp = await fetch('/entries/confirm', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ...pendingData, text: textToSave, events })
+                    });
+                }
                 if (resp.status === 401) { location.href = '/login'; return; }
                 if (!resp.ok) throw new Error(await resp.text());
-                const data = await resp.json();
+                data = await resp.json();
 
+                // Reset
+                const wasEdit = !!editingId;
+                editingId = null; cleanedText = null; usingCleaned = false; pendingData = null;
                 document.getElementById('reviewSection').style.display = 'none';
                 document.getElementById('formSection').style.display = 'block';
-                document.getElementById('entryText').value = '';
-                document.getElementById('entryTime').value = '';
-                document.getElementById('entryDate').value = today();
-                currentSource = 'typed';
-                cleanedText = null;
-                usingCleanedText = false;
-                pendingData = null;
+                document.getElementById('editTextSection').style.display = 'none';
+                document.getElementById('cleanedSection').style.display = 'none';
+                document.getElementById('cleanedAccepted').style.display = 'none';
+
+                if (!wasEdit) {
+                    document.getElementById('entryText').value = '';
+                    document.getElementById('entryTime').value = '';
+                    document.getElementById('entryDate').value = today();
+                    currentSource = 'typed';
+                }
 
                 const s = document.getElementById('status');
-                s.textContent = `✓ Uložené — entry #${data.entry_id}, ${data.event_count} eventov`;
+                s.textContent = `✓ ${wasEdit ? 'Upravené' : 'Uložené'} — entry #${data.entry_id}, ${data.event_count} eventov`;
                 s.style.display = 'block';
                 setTimeout(() => s.style.display = 'none', 4000);
                 loadEntries();
-            } catch (e) {
-                alert('Chyba uloženia: ' + e.message);
-            } finally {
+            } catch(e) { alert('Chyba: ' + e.message); }
+            finally {
                 btn.disabled = false;
-                btn.textContent = 'Potvrdiť a uložiť';
+                btn.textContent = editingId ? 'Uložiť zmeny' : 'Potvrdiť a uložiť';
             }
         }
 
         function goBack() {
+            editingId = null; cleanedText = null; usingCleaned = false;
             document.getElementById('reviewSection').style.display = 'none';
             document.getElementById('formSection').style.display = 'block';
+            document.getElementById('editTextSection').style.display = 'none';
+            document.getElementById('reviewTitle').textContent = 'Navrhnuté eventy';
+            document.getElementById('confirmBtn').textContent = 'Potvrdiť a uložiť';
         }
 
-        // ── Entry list ───────────────────────────────────────────────────
+        // ── Zoznam záznamov ──────────────────────────────────────────────────
 
         function eventsHtml(events) {
             if (!events || !events.length) return '';
             const pills = events.map(ev =>
                 `<span class="ev-pill">
-                    <span class="badge badge-${ev.event_type}">${ev.event_type}</span>
+                    <span class="badge badge-${ev.event_type}">${TYPE_LABELS[ev.event_type] || ev.event_type}</span>
                     ${ev.event_time ? `<span class="ev-t">${esc(ev.event_time)}</span>` : ''}
                     <span>${esc(ev.value)}</span>
                     ${ev.note ? `<span class="ev-n">— ${esc(ev.note)}</span>` : ''}
@@ -366,17 +442,23 @@
             const url = search ? `/entries?search=${encodeURIComponent(search)}` : '/entries';
             const resp = await fetch(url);
             if (resp.status === 401) { location.href = '/login'; return; }
-            const entries = await resp.json();
+            loadedEntries = await resp.json();
             const list = document.getElementById('entryList');
-            if (!entries.length) {
+            if (!loadedEntries.length) {
                 list.innerHTML = '<p style="color:#888;font-size:14px">Žiadne záznamy</p>';
                 return;
             }
-            list.innerHTML = entries.map(e => `
+            list.innerHTML = loadedEntries.map(e => `
                 <div class="entry">
-                    <div class="entry-meta">
-                        ${esc(e.entry_date)}${e.entry_time ? ' ' + esc(e.entry_time) : ''}
-                        ${e.author ? ' · <strong>' + esc(e.author) + '</strong>' : ''}
+                    <div class="entry-header">
+                        <div class="entry-meta">
+                            ${esc(e.entry_date)}${e.entry_time ? ' ' + esc(e.entry_time) : ''}
+                            ${e.author ? ' · <strong>' + esc(e.author) + '</strong>' : ''}
+                        </div>
+                        <div class="entry-btns">
+                            <button class="btn-edit-entry" onclick="openEdit(${e.id})">upraviť</button>
+                            <button class="btn-del-entry"  onclick="deleteEntry(${e.id})">zmazať</button>
+                        </div>
                     </div>
                     <div class="entry-text">${esc(e.text)}</div>
                     ${eventsHtml(e.events)}
@@ -386,12 +468,11 @@
 
         loadEntries();
 
-        // ── Diktovanie ───────────────────────────────────────────────────
+        // ── Diktovanie ───────────────────────────────────────────────────────
 
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         const dictBtn = document.getElementById('dictBtn');
-        let recognition = null;
-        let dictating = false;
+        let recognition = null, dictating = false;
 
         if (!SpeechRecognition) {
             dictBtn.classList.add('hidden');
