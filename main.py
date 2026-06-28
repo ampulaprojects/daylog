@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Cookie, Depends, Form
+from fastapi import FastAPI, HTTPException, Cookie, Depends, Form
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
@@ -6,11 +6,10 @@ from typing import Optional, List
 from database import (
     init_db, create_user, get_user_by_username, get_user_by_id,
     set_user_role, update_user_password,
-    create_entry, get_entries, get_entry
+    create_entry, get_entries, get_entry, create_event
 )
 from auth import verify_password, create_session_token, decode_session_token
-import json
-
+from llm import extract_events
 app = FastAPI()
 
 SESSION_MAX_AGE = 30 * 24 * 3600
@@ -113,20 +112,67 @@ def change_password(body: ChangePassword, user=Depends(require_auth)):
 class EntryCreate(BaseModel):
     entry_date: str
     text: str
-    title: Optional[str] = None
-    mood: Optional[str] = None
-    tags: Optional[List[str]] = []
+    entry_time: Optional[str] = None
     source: Optional[str] = "typed"
 
 
+class ExtractRequest(BaseModel):
+    text: str
+    entry_date: str
+    entry_time: Optional[str] = None
+
+
+class EventItem(BaseModel):
+    event_time: Optional[str] = None
+    event_type: str
+    value: str
+    note: Optional[str] = None
+
+
+class ConfirmRequest(BaseModel):
+    entry_date: str
+    entry_time: Optional[str] = None
+    text: str
+    source: Optional[str] = "typed"
+    events: List[EventItem]
+
+
+@app.post("/entries/extract")
+def entries_extract(body: ExtractRequest, user=Depends(require_auth)):
+    try:
+        events, _ = extract_events(body.text, body.entry_date)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"LLM chyba: {e}")
+    return {"events": events}
+
+
+@app.post("/entries/confirm", status_code=201)
+def entries_confirm(body: ConfirmRequest, user=Depends(require_auth)):
+    entry_id = create_entry(
+        entry_date=body.entry_date,
+        text=body.text,
+        entry_time=body.entry_time,
+        source=body.source,
+        user_id=user["id"]
+    )
+    for ev in body.events:
+        create_event(
+            entry_id=entry_id,
+            user_id=user["id"],
+            event_type=ev.event_type,
+            value=ev.value,
+            event_time=ev.event_time,
+            note=ev.note,
+        )
+    return {"entry_id": entry_id, "event_count": len(body.events)}
+
+
 @app.post("/entries", status_code=201)
-def add_entry(entry: EntryCreate, background_tasks: BackgroundTasks, user=Depends(require_auth)):
+def add_entry(entry: EntryCreate, user=Depends(require_auth)):
     entry_id = create_entry(
         entry_date=entry.entry_date,
         text=entry.text,
-        title=entry.title,
-        mood=entry.mood,
-        tags=entry.tags,
+        entry_time=entry.entry_time,
         source=entry.source,
         user_id=user["id"]
     )
@@ -136,15 +182,10 @@ def add_entry(entry: EntryCreate, background_tasks: BackgroundTasks, user=Depend
 @app.get("/entries")
 def list_entries(
     search: Optional[str] = None,
-    mood: Optional[str] = None,
     limit: int = 50,
     user=Depends(require_auth)
 ):
-    entries = get_entries(search=search, mood=mood, limit=limit)
-    for e in entries:
-        e["tags"] = json.loads(e["tags"] or "[]")
-        e["llm_tags"] = json.loads(e["llm_tags"] or "[]")
-    return entries
+    return get_entries(search=search, limit=limit)
 
 
 @app.get("/entries/{entry_id}")
@@ -152,8 +193,6 @@ def get_single_entry(entry_id: int, user=Depends(require_auth)):
     entry = get_entry(entry_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Záznam nenájdený")
-    entry["tags"] = json.loads(entry["tags"] or "[]")
-    entry["llm_tags"] = json.loads(entry["llm_tags"] or "[]")
     return entry
 
 

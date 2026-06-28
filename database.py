@@ -28,31 +28,38 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             created_at TEXT NOT NULL,
             entry_date TEXT NOT NULL,
-            title TEXT,
             text TEXT NOT NULL,
-            mood TEXT,
-            tags TEXT DEFAULT '[]',
             source TEXT DEFAULT 'typed',
             llm_analysis TEXT,
-            llm_tags TEXT DEFAULT '[]',
-            llm_mood TEXT,
             llm_processed_at TEXT,
             llm_model TEXT,
             user_id INTEGER REFERENCES users(id)
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entry_id INTEGER REFERENCES entries(id),
+            user_id INTEGER REFERENCES users(id),
+            event_time TEXT,
+            event_type TEXT,
+            value TEXT,
+            note TEXT,
+            confirmed INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL
+        )
+    """)
+    # migrations for existing DBs
     for col, definition in [
-        ("user_id", "INTEGER REFERENCES users(id)"),
-        ("role",    "TEXT NOT NULL DEFAULT 'user'"),
+        ("user_id",    "INTEGER REFERENCES users(id)"),
+        ("role",       "TEXT NOT NULL DEFAULT 'user'"),
+        ("entry_time", "TEXT"),
     ]:
-        try:
-            conn.execute(f"ALTER TABLE users ADD COLUMN {col} {definition}")
-        except Exception:
-            pass
-        try:
-            conn.execute(f"ALTER TABLE entries ADD COLUMN {col} {definition}")
-        except Exception:
-            pass
+        for table in ("users", "entries"):
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {definition}")
+            except Exception:
+                pass
     conn.commit()
     conn.close()
 
@@ -119,15 +126,14 @@ def set_user_role(username: str, role: str):
 
 # ── Entries ────────────────────────────────────────────────────────────────
 
-def create_entry(entry_date, text, title=None, mood=None, tags=None, source="typed", user_id=None):
+def create_entry(entry_date, text, entry_time=None, source="typed", user_id=None):
     conn = get_db()
     now = datetime.utcnow().isoformat()
-    tags_json = json.dumps(tags or [])
     cur = conn.execute(
         """INSERT INTO entries
-           (created_at, entry_date, title, text, mood, tags, source, user_id)
-           VALUES (?,?,?,?,?,?,?,?)""",
-        (now, entry_date, title, text, mood, tags_json, source, user_id)
+           (created_at, entry_date, entry_time, text, source, user_id)
+           VALUES (?,?,?,?,?,?)""",
+        (now, entry_date, entry_time, text, source, user_id)
     )
     conn.commit()
     entry_id = cur.lastrowid
@@ -149,10 +155,12 @@ def update_llm_analysis(entry_id, analysis, llm_tags, llm_mood, model_name):
     conn.close()
 
 
-def get_entries(search=None, mood=None, limit=50):
+def get_entries(search=None, limit=50):
     conn = get_db()
     query = """
-        SELECT e.*, u.username AS author
+        SELECT e.id, e.created_at, e.entry_date, e.entry_time, e.text, e.source,
+               e.llm_analysis, e.llm_processed_at, e.llm_model, e.user_id,
+               u.username AS author
         FROM entries e
         LEFT JOIN users u ON e.user_id = u.id
         WHERE 1=1
@@ -161,10 +169,7 @@ def get_entries(search=None, mood=None, limit=50):
     if search:
         query += " AND e.text LIKE ?"
         params.append(f"%{search}%")
-    if mood:
-        query += " AND e.mood = ?"
-        params.append(mood)
-    query += " ORDER BY e.entry_date DESC LIMIT ?"
+    query += " ORDER BY e.entry_date DESC, e.entry_time DESC LIMIT ?"
     params.append(limit)
     rows = conn.execute(query, params).fetchall()
     conn.close()
@@ -174,7 +179,9 @@ def get_entries(search=None, mood=None, limit=50):
 def get_entry(entry_id):
     conn = get_db()
     row = conn.execute(
-        """SELECT e.*, u.username AS author
+        """SELECT e.id, e.created_at, e.entry_date, e.entry_time, e.text, e.source,
+                  e.llm_analysis, e.llm_processed_at, e.llm_model, e.user_id,
+                  u.username AS author
            FROM entries e
            LEFT JOIN users u ON e.user_id = u.id
            WHERE e.id = ?""",
@@ -182,3 +189,74 @@ def get_entry(entry_id):
     ).fetchone()
     conn.close()
     return dict(row) if row else None
+
+
+# ── Events ─────────────────────────────────────────────────────────────────
+
+def create_event(entry_id, user_id, event_type, value, event_time=None, note=None):
+    conn = get_db()
+    now = datetime.utcnow().isoformat()
+    cur = conn.execute(
+        """INSERT INTO events
+           (entry_id, user_id, event_time, event_type, value, note, confirmed, created_at)
+           VALUES (?,?,?,?,?,?,0,?)""",
+        (entry_id, user_id, event_time, event_type, value, note, now)
+    )
+    conn.commit()
+    event_id = cur.lastrowid
+    conn.close()
+    return event_id
+
+
+def get_events_by_entry(entry_id):
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM events WHERE entry_id = ? ORDER BY event_time, created_at",
+        (entry_id,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_events_by_date(date):
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT ev.* FROM events ev
+           JOIN entries e ON ev.entry_id = e.id
+           WHERE e.entry_date = ?
+           ORDER BY ev.event_time, ev.created_at""",
+        (date,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def confirm_event(event_id):
+    conn = get_db()
+    conn.execute("UPDATE events SET confirmed = 1 WHERE id = ?", (event_id,))
+    conn.commit()
+    conn.close()
+
+
+def update_event(event_id, **kwargs):
+    if not kwargs:
+        return
+    allowed = {"event_time", "event_type", "value", "note", "confirmed"}
+    fields = {k: v for k, v in kwargs.items() if k in allowed}
+    if not fields:
+        return
+    set_clause = ", ".join(f"{k} = ?" for k in fields)
+    conn = get_db()
+    conn.execute(
+        f"UPDATE events SET {set_clause} WHERE id = ?",
+        (*fields.values(), event_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def delete_event(event_id):
+    conn = get_db()
+    conn.execute("DELETE FROM events WHERE id = ?", (event_id,))
+    conn.commit()
+    conn.close()
