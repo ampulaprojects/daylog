@@ -155,7 +155,7 @@ def update_llm_analysis(entry_id, analysis, llm_tags, llm_mood, model_name):
     conn.close()
 
 
-def get_entries(search=None, limit=50):
+def get_entries(search=None, limit=50, with_events=False):
     conn = get_db()
     query = """
         SELECT e.id, e.created_at, e.entry_date, e.entry_time, e.text, e.source,
@@ -172,8 +172,24 @@ def get_entries(search=None, limit=50):
     query += " ORDER BY e.entry_date DESC, e.entry_time DESC LIMIT ?"
     params.append(limit)
     rows = conn.execute(query, params).fetchall()
+    entries = [dict(r) for r in rows]
+
+    if with_events and entries:
+        ids = [e["id"] for e in entries]
+        placeholders = ",".join("?" * len(ids))
+        ev_rows = conn.execute(
+            f"SELECT * FROM events WHERE entry_id IN ({placeholders}) ORDER BY event_time, created_at",
+            ids
+        ).fetchall()
+        evs_by_id: dict = {}
+        for ev in ev_rows:
+            d = dict(ev)
+            evs_by_id.setdefault(d["entry_id"], []).append(d)
+        for e in entries:
+            e["events"] = evs_by_id.get(e["id"], [])
+
     conn.close()
-    return [dict(r) for r in rows]
+    return entries
 
 
 def get_entry(entry_id):

@@ -140,10 +140,10 @@ class ConfirmRequest(BaseModel):
 @app.post("/entries/extract")
 def entries_extract(body: ExtractRequest, user=Depends(require_auth)):
     try:
-        events, _ = extract_events(body.text, body.entry_date)
+        events, cleaned_text, _ = extract_events(body.text, body.entry_date)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLM chyba: {e}")
-    return {"events": events}
+    return {"events": events, "cleaned_text": cleaned_text}
 
 
 @app.post("/entries/confirm", status_code=201)
@@ -185,7 +185,7 @@ def list_entries(
     limit: int = 50,
     user=Depends(require_auth)
 ):
-    return get_entries(search=search, limit=limit)
+    return get_entries(search=search, limit=limit, with_events=True)
 
 
 @app.get("/entries/{entry_id}")

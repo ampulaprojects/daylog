@@ -14,68 +14,72 @@ def _get_client():
     return _client
 
 
-SYSTEM_PROMPT = """Si asistent ktorý extrahuje štruktúrované eventy z denníkového záznamu o zdravotnom stave dieťaťa.
+SYSTEM_PROMPT = """Si asistent ktorý spracúva denníkové záznamy o zdravotnom stave dieťaťa.
 
-Z textu extrahuj všetky udalosti a vráť ich ako JSON pole. Každý event má tieto polia:
-- event_time: čas vo formáte "HH:MM" alebo null ak nie je uvedený
-- event_type: jeden z typov: "liek", "nalada", "spravanie", "jedlo", "aktivita", "spatok", "fyzicke", "poznamka"
-- value: stručný popis udalosti (max 60 znakov)
-- note: doplňujúca informácia alebo null
+Vráť JSON objekt s dvoma poliami — žiadny iný text:
 
-Typy:
-- liek: podanie lieku alebo vitamínov
-- nalada: emočný stav (nervózny, spokojný, plakal, smial sa...)
-- spravanie: správanie (agresivita, sebapoškodzovanie, stereotypy...)
-- jedlo: jedlo alebo pitie
-- aktivita: fyzická alebo sociálna aktivita
-- spatok: spánok, zdriemnutie, odpočinok
-- fyzicke: fyzické prejavy (stolica, zvracanie, teplota, bolesti...)
-- poznamka: čokoľvek iné čo nespadá do ostatných kategórií
+"cleaned_text": Opravená verzia vstupného textu. Oprav gramatiku, interpunkciu a chyby prepisu diktovania. Zachovaj všetky fakty a informácie. Ak je text v poriadku, vráť ho bez zmeny.
 
-Vráť IBA JSON pole, žiadny iný text. Príklad formátu:
-[
-  {"event_time": "08:00", "event_type": "aktivita", "value": "vstal", "note": null},
-  {"event_time": "08:15", "event_type": "liek", "value": "Orfiril 300mg", "note": "bez problémov"}
-]"""
+"events": Pole extrahovaných udalostí. Každý event:
+  event_time — "HH:MM" alebo null
+  event_type — "liek" | "nalada" | "spravanie" | "jedlo" | "aktivita" | "spatok" | "fyzicke" | "poznamka"
+  value — popis max 60 znakov
+  note — doplnok alebo null
+
+Typy: liek=podanie lieku/vitamínov, nalada=emočný stav, spravanie=správanie/agresivita/stereotypy, jedlo=jedlo/pitie, aktivita=fyzická/sociálna aktivita, spatok=spánok/odpočinok, fyzicke=fyzické prejavy (stolica/zvracanie/teplota), poznamka=iné.
+
+Príklad výstupu:
+{"cleaned_text": "...", "events": [{"event_time": "08:00", "event_type": "aktivita", "value": "vstal", "note": null}]}"""
 
 
-def extract_events(text: str, entry_date: str) -> list[dict]:
+def extract_events(text: str, entry_date: str):
     client = _get_client()
-    user_message = f"Dátum záznamu: {entry_date}\n\nText záznamu:\n{text}"
+    user_message = f"Dátum: {entry_date}\n\nText:\n{text}"
 
     response = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=1024,
+        max_tokens=1536,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_message}]
     )
 
     raw = response.content[0].text.strip()
-    # strip markdown code fences if present
     if raw.startswith("```"):
         raw = raw.split("\n", 1)[1]
         raw = raw.rsplit("```", 1)[0].strip()
 
-    events = json.loads(raw)
+    result = json.loads(raw)
+
+    # handle both new format (object) and old format (array) for backwards compat
+    if isinstance(result, list):
+        events = result
+        cleaned_text = text
+    else:
+        events = result.get("events", [])
+        cleaned_text = result.get("cleaned_text", text)
+
     valid_types = {"liek", "nalada", "spravanie", "jedlo", "aktivita", "spatok", "fyzicke", "poznamka"}
     for ev in events:
         if ev.get("event_type") not in valid_types:
             ev["event_type"] = "poznamka"
-    return events, raw
+
+    return events, cleaned_text, raw
 
 
 if __name__ == "__main__":
     test_text = (
-        "10:00 vstal, 10:15 dostal Orfiril a vitamíny, bol nervózny, "
-        "12:17 pol tablety Tisercinu, 13:00 nervózny, 16:20 stolica, "
-        "potom išiel pod papuču"
+        "10:00 vstal, 10:15 dostal Orfiril a vitaminy, bol nervozny, "
+        "12:17 pol tablety Tisercinu, 13:00 nervozny, 16:20 stolica, "
+        "potom isiel pod papu"
     )
     entry_date = "2026-06-28"
 
-    print("=== Surový výstup LLM ===")
-    events, raw = extract_events(test_text, entry_date)
+    print("=== Surovy vystup LLM ===")
+    events, cleaned_text, raw = extract_events(test_text, entry_date)
     print(raw)
-    print("\n=== Parsované eventy ===")
+    print("\n=== Cleaned text ===")
+    print(cleaned_text)
+    print("\n=== Parsovane eventy ===")
     for ev in events:
         t = ev.get("event_time") or "??:??"
         print(f"  [{t}] {ev['event_type']:12s} | {ev['value']}" +
