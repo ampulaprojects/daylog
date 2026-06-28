@@ -6,7 +6,8 @@ from typing import Optional, List
 from database import (
     init_db, create_user, get_user_by_username, get_user_by_id,
     set_user_role, update_user_password,
-    create_entry, get_entries, get_entry, create_event
+    create_entry, get_entries, get_entry, create_event,
+    delete_entry, update_entry_text, replace_entry_events
 )
 from auth import verify_password, create_session_token, decode_session_token
 from llm import extract_events
@@ -164,6 +165,25 @@ def entries_confirm(body: ConfirmRequest, user=Depends(require_auth)):
             event_time=ev.event_time,
             note=ev.note,
         )
+    return {"entry_id": entry_id, "event_count": len(body.events)}
+
+
+class EntryUpdate(BaseModel):
+    text: str
+    events: List[EventItem]
+
+
+@app.delete("/entries/{entry_id}", status_code=204)
+def delete_entry_endpoint(entry_id: int, user=Depends(require_auth)):
+    delete_entry(entry_id)
+
+
+@app.put("/entries/{entry_id}")
+def update_entry_endpoint(entry_id: int, body: EntryUpdate, user=Depends(require_auth)):
+    update_entry_text(entry_id, body.text)
+    events_data = [{"event_time": e.event_time, "event_type": e.event_type,
+                    "value": e.value, "note": e.note} for e in body.events]
+    replace_entry_events(entry_id, user["id"], events_data)
     return {"entry_id": entry_id, "event_count": len(body.events)}
 
 
