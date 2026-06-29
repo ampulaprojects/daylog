@@ -81,9 +81,10 @@
 
         /* Použitie .event-item .input-X prekoná globálne input[type=X] { width:100% } */
         .event-item .input-time {
-            width: 86px; flex-shrink: 0;
+            width: 72px; flex-shrink: 0;
             border: 1px solid #d1d5db; border-radius: 4px;
             font-size: 13px; color: #555; padding: 3px 6px; background: #fff;
+            font-variant-numeric: tabular-nums; letter-spacing: 0.02em;
         }
         .event-item .input-value {
             flex: 1; min-width: 80px;
@@ -312,7 +313,7 @@
                             onchange="this.className='input-type badge-'+this.value">
                         ${typeOptions(ev.event_type)}
                     </select>
-                    <input type="time"  class="input-time"  value="${esc(ev.event_time || '')}">
+                    <input type="text"  class="input-time"  value="${esc(ev.event_time || '')}" placeholder="HH:MM">
                     <input type="text"  class="input-value" value="${esc(ev.value)}">
                     <input type="text"  class="input-note"  placeholder="poznámka..." value="${esc(ev.note || '')}">
                     <button class="del-btn"
