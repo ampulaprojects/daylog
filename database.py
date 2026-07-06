@@ -140,7 +140,7 @@ def get_entries(search=None, limit=50, with_events=False):
     conn = get_db()
     query = """
         SELECT e.id, e.created_at, e.entry_date, e.entry_time, e.text, e.source,
-               e.llm_analysis, e.llm_processed_at, e.llm_model, e.user_id,
+               e.llm_analysis, e.llm_processed_at, e.llm_model, e.user_id, e.photo_path,
                u.username AS author
         FROM entries e
         LEFT JOIN users u ON e.user_id = u.id
@@ -177,7 +177,7 @@ def get_entry(entry_id):
     conn = get_db()
     row = conn.execute(
         """SELECT e.id, e.created_at, e.entry_date, e.entry_time, e.text, e.source,
-                  e.llm_analysis, e.llm_processed_at, e.llm_model, e.user_id,
+                  e.llm_analysis, e.llm_processed_at, e.llm_model, e.user_id, e.photo_path,
                   u.username AS author
            FROM entries e
            LEFT JOIN users u ON e.user_id = u.id

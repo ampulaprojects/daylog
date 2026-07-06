@@ -1,5 +1,6 @@
 import io
 import pathlib
+import re
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, Cookie, Depends, Form, UploadFile, File
 from fastapi.staticfiles import StaticFiles
@@ -241,6 +242,21 @@ def get_single_entry(entry_id: int, user=Depends(require_auth)):
     if not entry:
         raise HTTPException(status_code=404, detail="Záznam nenájdený")
     return entry
+
+
+_SAFE_FILENAME = re.compile(r'^[a-zA-Z0-9_\-]+\.(jpg|jpeg|png)$')
+
+
+@app.get("/photos/{filename}")
+def get_photo(filename: str, user=Depends(require_auth)):
+    if not _SAFE_FILENAME.fullmatch(filename):
+        raise HTTPException(status_code=400, detail="Neplatné meno súboru")
+    path = (UPLOAD_DIR / filename).resolve()
+    if not str(path).startswith(str(UPLOAD_DIR.resolve())):
+        raise HTTPException(status_code=400, detail="Neplatná cesta")
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Súbor nenájdený")
+    return FileResponse(path, media_type="image/jpeg")
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")

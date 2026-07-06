@@ -122,6 +122,20 @@
         .ev-t { color: #888; }
         .ev-n { color: #aaa; font-style: italic; }
         #searchInput { margin-bottom: 10px; }
+
+        /* ── Thumbnail ──────────────────────────────────────────────────── */
+        .entry-thumb { margin-top: 8px; }
+        .entry-thumb img { max-height: 80px; border-radius: 4px; cursor: zoom-in; border: 1px solid #e5e7eb; display: block; }
+        .entry-thumb img:hover { border-color: #9ca3af; }
+
+        /* ── Lightbox ───────────────────────────────────────────────────── */
+        #photoOverlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.88);
+            align-items: center; justify-content: center;
+            z-index: 1000; cursor: zoom-out;
+        }
+        #photoOverlay img { max-width: 95vw; max-height: 95vh; border-radius: 6px; cursor: default; }
     </style>
 </head>
 <body>
@@ -200,6 +214,11 @@
         <div id="entryList"></div>
     </div>
 
+    <!-- ── Lightbox overlay ──────────────────────────────────────────────── -->
+    <div id="photoOverlay" onclick="closePhoto()">
+        <img id="photoOverlayImg" src="" onclick="event.stopPropagation()">
+    </div>
+
     <script>
         const TYPES = ['liek','nalada','spravanie','jedlo','aktivita','spatok','fyzicke','poznamka'];
         const TYPE_LABELS = {
@@ -217,6 +236,16 @@
         let pendingPhotoPath = null;
 
         function today() { return new Date().toISOString().split('T')[0]; }
+
+        function openPhoto(src) {
+            document.getElementById('photoOverlayImg').src = src;
+            document.getElementById('photoOverlay').style.display = 'flex';
+        }
+        function closePhoto() {
+            document.getElementById('photoOverlay').style.display = 'none';
+            document.getElementById('photoOverlayImg').src = '';
+        }
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closePhoto(); });
         function esc(s) {
             if (!s) return '';
             return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -504,6 +533,7 @@
                         </div>
                     </div>
                     <div class="entry-text">${esc(e.text)}</div>
+                    ${e.photo_path ? `<div class="entry-thumb"><img src="/photos/${esc(e.photo_path.replace('uploads/',''))}" onclick="openPhoto(this.src)" loading="lazy"></div>` : ''}
                     ${eventsHtml(e.events)}
                 </div>
             `).join('');
