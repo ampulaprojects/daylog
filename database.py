@@ -1,6 +1,5 @@
 from datetime import datetime
 import sqlite3
-import json
 import os
 
 DB_PATH = os.environ.get("DAYLOG_DB", "daylog.db")
@@ -26,14 +25,15 @@ def init_db():
     conn.execute("""
         CREATE TABLE IF NOT EXISTS entries (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id),
             created_at TEXT NOT NULL,
             entry_date TEXT NOT NULL,
+            entry_time TEXT,
             text TEXT NOT NULL,
             source TEXT DEFAULT 'typed',
             llm_analysis TEXT,
             llm_processed_at TEXT,
-            llm_model TEXT,
-            user_id INTEGER REFERENCES users(id)
+            llm_model TEXT
         )
     """)
     conn.execute("""
@@ -49,17 +49,6 @@ def init_db():
             created_at TEXT NOT NULL
         )
     """)
-    # migrations for existing DBs
-    for col, definition in [
-        ("user_id",    "INTEGER REFERENCES users(id)"),
-        ("role",       "TEXT NOT NULL DEFAULT 'user'"),
-        ("entry_time", "TEXT"),
-    ]:
-        for table in ("users", "entries"):
-            try:
-                conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {definition}")
-            except Exception:
-                pass
     conn.commit()
     conn.close()
 
@@ -140,19 +129,6 @@ def create_entry(entry_date, text, entry_time=None, source="typed", user_id=None
     conn.close()
     return entry_id
 
-
-def update_llm_analysis(entry_id, analysis, llm_tags, llm_mood, model_name):
-    conn = get_db()
-    now = datetime.utcnow().isoformat()
-    conn.execute(
-        """UPDATE entries SET
-           llm_analysis = ?, llm_tags = ?, llm_mood = ?,
-           llm_processed_at = ?, llm_model = ?
-           WHERE id = ?""",
-        (json.dumps(analysis), json.dumps(llm_tags), llm_mood, now, model_name, entry_id)
-    )
-    conn.commit()
-    conn.close()
 
 
 def get_entries(search=None, limit=50, with_events=False):
