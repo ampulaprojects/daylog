@@ -1,4 +1,7 @@
-from fastapi import FastAPI, HTTPException, Cookie, Depends, Form
+import io
+import pathlib
+from datetime import datetime
+from fastapi import FastAPI, HTTPException, Cookie, Depends, Form, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
@@ -10,7 +13,9 @@ from database import (
     delete_entry, update_entry_text, replace_entry_events
 )
 from auth import verify_password, create_session_token, decode_session_token
-from llm import extract_events
+from llm import extract_events, transcribe_photo
+
+UPLOAD_DIR = pathlib.Path("uploads")
 app = FastAPI()
 
 SESSION_MAX_AGE = 30 * 24 * 3600
@@ -136,6 +141,27 @@ class ConfirmRequest(BaseModel):
     text: str
     source: Optional[str] = "typed"
     events: List[EventItem]
+    photo_path: Optional[str] = None
+
+
+@app.post("/entries/transcribe")
+async def entries_transcribe(file: UploadFile = File(...), user=Depends(require_auth)):
+    UPLOAD_DIR.mkdir(exist_ok=True)
+    contents = await file.read()
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    filename = f"{ts}_{user['username']}.jpg"
+    orig_path = UPLOAD_DIR / filename
+    with open(orig_path, "wb") as f:
+        f.write(contents)
+    try:
+        result = transcribe_photo(contents)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Chyba prepisu: {e}")
+    return {
+        "transcription": result["transcription"],
+        "suggested_date": result.get("suggested_date"),
+        "photo_path": f"uploads/{filename}",
+    }
 
 
 @app.post("/entries/extract")
@@ -154,7 +180,8 @@ def entries_confirm(body: ConfirmRequest, user=Depends(require_auth)):
         text=body.text,
         entry_time=body.entry_time,
         source=body.source,
-        user_id=user["id"]
+        user_id=user["id"],
+        photo_path=body.photo_path,
     )
     for ev in body.events:
         create_event(

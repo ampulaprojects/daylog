@@ -33,9 +33,14 @@ def init_db():
             source TEXT DEFAULT 'typed',
             llm_analysis TEXT,
             llm_processed_at TEXT,
-            llm_model TEXT
+            llm_model TEXT,
+            photo_path TEXT
         )
     """)
+    try:
+        conn.execute("ALTER TABLE entries ADD COLUMN photo_path TEXT")
+    except Exception:
+        pass
     conn.execute("""
         CREATE TABLE IF NOT EXISTS events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -115,14 +120,14 @@ def set_user_role(username: str, role: str):
 
 # ── Entries ────────────────────────────────────────────────────────────────
 
-def create_entry(entry_date, text, entry_time=None, source="typed", user_id=None):
+def create_entry(entry_date, text, entry_time=None, source="typed", user_id=None, photo_path=None):
     conn = get_db()
     now = datetime.utcnow().isoformat()
     cur = conn.execute(
         """INSERT INTO entries
-           (created_at, entry_date, entry_time, text, source, user_id)
-           VALUES (?,?,?,?,?,?)""",
-        (now, entry_date, entry_time, text, source, user_id)
+           (user_id, created_at, entry_date, entry_time, text, source, photo_path)
+           VALUES (?,?,?,?,?,?,?)""",
+        (user_id, now, entry_date, entry_time, text, source, photo_path)
     )
     conn.commit()
     entry_id = cur.lastrowid

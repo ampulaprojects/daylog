@@ -21,9 +21,11 @@
         label { font-size: 13px; color: #555; display: block; margin-bottom: 4px; }
         #status { font-size: 13px; color: green; margin-top: 8px; display: none; }
         .textarea-row { position: relative; }
-        #dictBtn { position: absolute; bottom: 8px; right: 8px; padding: 4px 10px; font-size: 12px; background: #444; border-radius: 4px; color: #fff; border: none; cursor: pointer; }
+        .textarea-btns { position: absolute; bottom: 8px; right: 8px; display: flex; gap: 6px; }
+        #dictBtn, #photoBtn { padding: 4px 10px; font-size: 12px; background: #444; border-radius: 4px; color: #fff; border: none; cursor: pointer; }
         #dictBtn.active { background: #c00; }
-        #dictBtn.hidden { display: none; }
+        #dictBtn.hidden, #photoBtn.hidden { display: none; }
+        .date-highlight { border-color: #f59e0b !important; box-shadow: 0 0 0 3px rgba(245,158,11,0.25) !important; }
 
         /* ── Badges ─────────────────────────────────────────────────────── */
         .badge { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; color: #fff; white-space: nowrap; flex-shrink: 0; }
@@ -147,8 +149,13 @@
             <label>Záznam</label>
             <div class="textarea-row">
                 <textarea id="entryText" rows="5" placeholder="Čo sa stalo..."></textarea>
-                <button id="dictBtn" type="button" onclick="toggleDictation()">🎤 Diktovať</button>
+                <div class="textarea-btns">
+                    <button id="photoBtn" type="button" onclick="triggerPhoto()">📷 Foto</button>
+                    <button id="dictBtn" type="button" onclick="toggleDictation()">🎤 Diktovať</button>
+                </div>
             </div>
+            <input type="file" id="photoInput" accept="image/*" capture="environment"
+                   style="display:none" onchange="uploadPhoto(this)">
         </div>
         <button id="saveBtn" onclick="saveEntry()">Uložiť</button>
         <div id="status"></div>
@@ -201,12 +208,13 @@
             fyzicke: 'fyzické', poznamka: 'poznámka'
         };
 
-        let loadedEntries = [];
-        let pendingData   = null;
-        let editingId     = null;   // null = nový záznam, number = edit existujúceho
-        let cleanedText   = null;
-        let usingCleaned  = false;
-        let currentSource = 'typed';
+        let loadedEntries    = [];
+        let pendingData      = null;
+        let editingId        = null;   // null = nový záznam, number = edit existujúceho
+        let cleanedText      = null;
+        let usingCleaned     = false;
+        let currentSource    = 'typed';
+        let pendingPhotoPath = null;
 
         function today() { return new Date().toISOString().split('T')[0]; }
         function esc(s) {
@@ -216,6 +224,40 @@
 
         document.getElementById('entryDate').value = today();
         document.getElementById('searchInput').addEventListener('input', loadEntries);
+
+        // ── Foto prepis ──────────────────────────────────────────────────────
+
+        function triggerPhoto() { document.getElementById('photoInput').click(); }
+
+        function highlightDate() {
+            const el = document.getElementById('entryDate');
+            el.classList.add('date-highlight');
+            setTimeout(() => el.classList.remove('date-highlight'), 3000);
+        }
+
+        async function uploadPhoto(input) {
+            if (!input.files || !input.files[0]) return;
+            const file = input.files[0];
+            input.value = '';
+            const btn = document.getElementById('photoBtn');
+            btn.disabled = true; btn.textContent = 'Prepisujem...';
+            try {
+                const fd = new FormData();
+                fd.append('file', file);
+                const resp = await fetch('/entries/transcribe', { method: 'POST', body: fd });
+                if (resp.status === 401) { location.href = '/login'; return; }
+                if (!resp.ok) throw new Error(await resp.text());
+                const data = await resp.json();
+                document.getElementById('entryText').value = data.transcription;
+                pendingPhotoPath = data.photo_path;
+                currentSource = 'photo';
+                if (data.suggested_date) {
+                    document.getElementById('entryDate').value = data.suggested_date;
+                    highlightDate();
+                }
+            } catch(e) { alert('Chyba prepisu: ' + e.message); }
+            finally { btn.disabled = false; btn.textContent = '📷 Foto'; }
+        }
 
         // ── Nový záznam ──────────────────────────────────────────────────────
 
@@ -379,7 +421,7 @@
                 } else {
                     resp = await fetch('/entries/confirm', {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ ...pendingData, text: textToSave, events })
+                        body: JSON.stringify({ ...pendingData, text: textToSave, events, photo_path: pendingPhotoPath || null })
                     });
                 }
                 if (resp.status === 401) { location.href = '/login'; return; }
@@ -388,7 +430,7 @@
 
                 // Reset
                 const wasEdit = !!editingId;
-                editingId = null; cleanedText = null; usingCleaned = false; pendingData = null;
+                editingId = null; cleanedText = null; usingCleaned = false; pendingData = null; pendingPhotoPath = null;
                 document.getElementById('reviewSection').style.display = 'none';
                 document.getElementById('formSection').style.display = 'block';
                 document.getElementById('editTextSection').style.display = 'none';
@@ -415,7 +457,7 @@
         }
 
         function goBack() {
-            editingId = null; cleanedText = null; usingCleaned = false;
+            editingId = null; cleanedText = null; usingCleaned = false; pendingPhotoPath = null;
             document.getElementById('reviewSection').style.display = 'none';
             document.getElementById('formSection').style.display = 'block';
             document.getElementById('editTextSection').style.display = 'none';

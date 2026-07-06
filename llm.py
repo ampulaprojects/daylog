@@ -1,3 +1,5 @@
+import base64
+import io
 import os
 import json
 import re
@@ -90,6 +92,56 @@ def _parse_llm_json(raw: str, fallback_text: str) -> dict | list:
 
     # 4. Fallback — vráť prázdne eventy, pôvodný text
     return {"cleaned_text": fallback_text, "events": []}
+
+
+def _resize_for_api(image_bytes: bytes, max_side: int = 1500) -> bytes:
+    from PIL import Image
+    img = Image.open(io.BytesIO(image_bytes))
+    if img.mode not in ("RGB", "L"):
+        img = img.convert("RGB")
+    w, h = img.size
+    if max(w, h) > max_side:
+        ratio = max_side / max(w, h)
+        img = img.resize((int(w * ratio), int(h * ratio)), Image.LANCZOS)
+    out = io.BytesIO()
+    img.save(out, format="JPEG", quality=85)
+    return out.getvalue()
+
+
+TRANSCRIBE_PROMPT = (
+    "Prepíš rukou písaný text z obrázka. "
+    "Jemne vyčisti: rozpíš skratky, oprav zjavné preklepy, zachovaj časové značky a štruktúru riadkov. "
+    "Ak je na stránke dátum, vráť ho ako suggested_date vo formáte YYYY-MM-DD, inak null. "
+    'Vráť iba JSON objekt bez iného textu: {"transcription": "...", "suggested_date": "YYYY-MM-DD alebo null"}'
+)
+
+
+def transcribe_photo(image_bytes: bytes) -> dict:
+    client = _get_client()
+    resized = _resize_for_api(image_bytes)
+    b64 = base64.standard_b64encode(resized).decode()
+
+    response = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=1024,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}},
+                {"type": "text", "text": TRANSCRIBE_PROMPT},
+            ]
+        }]
+    )
+
+    raw = response.content[0].text.strip()
+    result = _parse_llm_json(raw, "")
+    suggested = result.get("suggested_date")
+    if suggested in ("null", "", "YYYY-MM-DD alebo null"):
+        suggested = None
+    return {
+        "transcription": result.get("transcription", raw),
+        "suggested_date": suggested,
+    }
 
 
 if __name__ == "__main__":
