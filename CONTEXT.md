@@ -66,6 +66,11 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 ## Changelog
 
 ### 2026-07-06
+- Čistá DB migrácia v2: odstránené mŕtve stĺpce (title, mood, tags, llm_*) a migračné artefakty
+- Zmazaný register.html a update_llm_analysis() (mŕtvy kód)
+- Overené na mobile: editácia eventov v review paneli, cleaned text s Prijať/Zamietnuť
+- Databáza: 3 users, 10 entries, 47 events
+- Ďalší krok: tabuľka režimu liekov (medications/routines)
 - Robustné parsovanie JSON z LLM v `llm.py`
 - `_parse_llm_json()`: 4 fallback úrovne (priamy parse → strip markdown → regex extrakcia → prázdne eventy)
 - LLM chyba už nikdy nespadne celú extrakciu, vráti prázdne eventy a pôvodný text
