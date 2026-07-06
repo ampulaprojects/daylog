@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import anthropic
 from dotenv import load_dotenv
 
@@ -44,13 +45,9 @@ def extract_events(text: str, entry_date: str):
     )
 
     raw = response.content[0].text.strip()
-    if raw.startswith("```"):
-        raw = raw.split("\n", 1)[1]
-        raw = raw.rsplit("```", 1)[0].strip()
 
-    result = json.loads(raw)
+    result = _parse_llm_json(raw, text)
 
-    # handle both new format (object) and old format (array) for backwards compat
     if isinstance(result, list):
         events = result
         cleaned_text = text
@@ -64,6 +61,35 @@ def extract_events(text: str, entry_date: str):
             ev["event_type"] = "poznamka"
 
     return events, cleaned_text, raw
+
+
+def _parse_llm_json(raw: str, fallback_text: str) -> dict | list:
+    # 1. Priamy parse
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        pass
+
+    # 2. Strip markdown code fences a skús znova
+    cleaned = raw
+    if "```" in cleaned:
+        cleaned = re.sub(r"```[a-z]*\n?", "", cleaned).strip()
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+
+    # 3. Extrakcia prvého {...} alebo [...] bloku regexom
+    for pattern in (r"\{[\s\S]*\}", r"\[[\s\S]*\]"):
+        m = re.search(pattern, cleaned)
+        if m:
+            try:
+                return json.loads(m.group())
+            except json.JSONDecodeError:
+                pass
+
+    # 4. Fallback — vráť prázdne eventy, pôvodný text
+    return {"cleaned_text": fallback_text, "events": []}
 
 
 if __name__ == "__main__":
