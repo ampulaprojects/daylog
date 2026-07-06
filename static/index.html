@@ -123,6 +123,11 @@
         .ev-n { color: #aaa; font-style: italic; }
         #searchInput { margin-bottom: 10px; }
 
+        /* ── Review photo preview ──────────────────────────────────────── */
+        #reviewPhoto { margin-bottom: 12px; }
+        #reviewPhoto img { max-height: 200px; width: 100%; object-fit: contain; border-radius: 6px; cursor: zoom-in; border: 1px solid #e5e7eb; background: #f9fafb; }
+        #reviewPhoto img:hover { border-color: #9ca3af; }
+
         /* ── Thumbnail ──────────────────────────────────────────────────── */
         .entry-thumb { margin-top: 8px; }
         .entry-thumb img { max-height: 80px; border-radius: 4px; cursor: zoom-in; border: 1px solid #e5e7eb; display: block; }
@@ -180,6 +185,11 @@
         <h2 id="reviewTitle">Navrhnuté eventy</h2>
         <div class="review-meta" id="reviewMeta"></div>
 
+        <!-- Náhľad fotky (ak existuje) -->
+        <div id="reviewPhoto" style="display:none">
+            <img id="reviewPhotoImg" src="" onclick="openPhoto(this.src)">
+        </div>
+
         <!-- Navrhovaný text (iba nový záznam) -->
         <div class="cleaned-box" id="cleanedSection" style="display:none">
             <div class="cleaned-label">Navrhovaný text:</div>
@@ -236,6 +246,18 @@
         let pendingPhotoPath = null;
 
         function today() { return new Date().toISOString().split('T')[0]; }
+
+        function setReviewPhoto(photoPath) {
+            const box = document.getElementById('reviewPhoto');
+            if (photoPath) {
+                const fname = photoPath.replace('uploads/', '');
+                document.getElementById('reviewPhotoImg').src = '/photos/' + fname;
+                box.style.display = 'block';
+            } else {
+                box.style.display = 'none';
+                document.getElementById('reviewPhotoImg').src = '';
+            }
+        }
 
         function openPhoto(src) {
             document.getElementById('photoOverlayImg').src = src;
@@ -329,6 +351,8 @@
             const showCt = ct && ct.trim() !== pendingData.text.trim();
             document.getElementById('cleanedSection').style.display = showCt ? 'block' : 'none';
             if (showCt) document.getElementById('cleanedPreview').value = ct;
+
+            setReviewPhoto(pendingPhotoPath);
         }
 
         // ── Edit existujúceho záznamu ────────────────────────────────────────
@@ -351,6 +375,7 @@
             document.getElementById('editEntryText').value = entry.text;
             document.getElementById('editTextSection').style.display = 'block';
 
+            setReviewPhoto(entry.photo_path || null);
             renderEventList(entry.events || []);
         }
 
@@ -487,6 +512,7 @@
 
         function goBack() {
             editingId = null; cleanedText = null; usingCleaned = false; pendingPhotoPath = null;
+            setReviewPhoto(null);
             document.getElementById('reviewSection').style.display = 'none';
             document.getElementById('formSection').style.display = 'block';
             document.getElementById('editTextSection').style.display = 'none';
