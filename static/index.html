@@ -124,6 +124,9 @@
         .del-btn { background: none; color: #d1d5db; border: none; padding: 2px 5px; font-size: 15px; cursor: pointer; border-radius: 3px; flex-shrink: 0; }
         .del-btn:hover { background: #fee2e2; color: #dc2626; }
         .review-actions { display: flex; gap: 8px; margin-top: 12px; }
+        .entry-editing { background: #f8fafc; border-color: #94a3b8; }
+        .inline-edit-actions { display: flex; gap: 8px; margin-top: 12px; }
+        .inline-event-list { margin: 10px 0; }
 
         /* ── Entry list ─────────────────────────────────────────────────── */
         .entry { border: 1px solid #eee; border-radius: 6px; padding: 12px; margin-bottom: 10px; }
@@ -256,11 +259,12 @@
 
         let loadedEntries    = [];
         let pendingData      = null;
-        let editingId        = null;   // null = nový záznam, number = edit existujúceho
+        let editingId        = null;
         let cleanedText      = null;
         let usingCleaned     = false;
         let currentSource    = 'typed';
         let pendingPhotoPath = null;
+        let inlineEditId     = null;
 
         function today() { return new Date().toISOString().split('T')[0]; }
 
@@ -388,28 +392,85 @@
             setReviewPhoto(pendingPhotoPath);
         }
 
-        // ── Edit existujúceho záznamu ────────────────────────────────────────
+        // ── Inline edit záznamu ──────────────────────────────────────────────
 
         function openEdit(entryId) {
+            if (inlineEditId !== null && inlineEditId !== entryId) cancelInlineEdit(inlineEditId);
             const entry = loadedEntries.find(e => e.id === entryId);
             if (!entry) return;
-            editingId = entryId;
-            pendingData = { entry_date: entry.entry_date, entry_time: entry.entry_time,
-                            text: entry.text, source: entry.source || 'typed' };
-            cleanedText = null; usingCleaned = false;
+            inlineEditId = entryId;
 
-            document.getElementById('formSection').style.display = 'none';
-            document.getElementById('reviewSection').style.display = 'block';
-            document.getElementById('reviewTitle').textContent = `Upraviť — ${entry.entry_date}`;
-            document.getElementById('confirmBtn').textContent = 'Uložiť zmeny';
-            document.getElementById('cleanedSection').style.display = 'none';
-            document.getElementById('cleanedAccepted').style.display = 'none';
+            const entryEl = document.getElementById('entry-' + entryId);
+            if (!entryEl) return;
 
-            document.getElementById('editTextSection').style.display = 'block';
-            setTA('editEntryText', entry.text);
+            const photoHtml = entry.photo_path
+                ? `<div style="margin-bottom:12px">
+                       <img src="/photos/${esc(entry.photo_path.replace('uploads/',''))}"
+                            onclick="openPhoto(this.src)"
+                            style="max-height:200px;width:100%;object-fit:contain;border-radius:6px;cursor:zoom-in;border:1px solid #e5e7eb;background:#f9fafb">
+                   </div>`
+                : '';
 
-            setReviewPhoto(entry.photo_path || null);
-            renderEventList(entry.events || []);
+            entryEl.classList.add('entry-editing');
+            entryEl.innerHTML = `
+                <div class="entry-header">
+                    <div class="entry-meta">
+                        ${esc(entry.entry_date)}${entry.entry_time ? ' ' + esc(entry.entry_time) : ''}
+                        ${entry.author ? ' · <strong>' + esc(entry.author) + '</strong>' : ''}
+                    </div>
+                    <button class="btn-ghost btn-sm" onclick="cancelInlineEdit(${entryId})">Zrušiť</button>
+                </div>
+                ${photoHtml}
+                <textarea class="auto-textarea" id="inline-text-${entryId}">${esc(entry.text)}</textarea>
+                <div class="inline-event-list" id="inline-events-${entryId}">
+                    ${buildEventRowsHtml(entry.events || [])}
+                </div>
+                <div class="inline-edit-actions">
+                    <button onclick="saveInlineEdit(${entryId})">Uložiť zmeny</button>
+                    <button class="btn-ghost" onclick="cancelInlineEdit(${entryId})">Zrušiť</button>
+                </div>
+            `;
+            const ta = document.getElementById('inline-text-' + entryId);
+            if (ta) resizeTA(ta);
+        }
+
+        async function saveInlineEdit(entryId) {
+            const entryEl = document.getElementById('entry-' + entryId);
+            if (!entryEl) return;
+            const ta = document.getElementById('inline-text-' + entryId);
+            const textToSave = ta ? ta.value.trim() : '';
+            if (!textToSave) return alert('Text záznamu nesmie byť prázdny');
+            const container = document.getElementById('inline-events-' + entryId);
+            const events = Array.from(container.querySelectorAll('.event-item')).map(row => ({
+                event_time: row.querySelector('.input-time').value  || null,
+                event_type: row.querySelector('.input-type').value,
+                value:      row.querySelector('.input-value').value.trim(),
+                note:       row.querySelector('.input-note').value.trim() || null,
+            })).filter(ev => ev.value);
+            const saveBtn = entryEl.querySelector('.inline-edit-actions button');
+            if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Ukladám...'; }
+            try {
+                const resp = await fetch(`/entries/${entryId}`, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: textToSave, events })
+                });
+                if (resp.status === 401) { location.href = '/login'; return; }
+                if (!resp.ok) throw new Error(await resp.text());
+                inlineEditId = null;
+                loadEntries();
+            } catch(e) {
+                alert('Chyba: ' + e.message);
+                if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Uložiť zmeny'; }
+            }
+        }
+
+        function cancelInlineEdit(entryId) {
+            const entryEl = document.getElementById('entry-' + entryId);
+            const entry = loadedEntries.find(e => e.id === entryId);
+            if (!entryEl || !entry) { inlineEditId = null; return; }
+            entryEl.classList.remove('entry-editing');
+            entryEl.innerHTML = entryHtml(entry);
+            inlineEditId = null;
         }
 
         async function deleteEntry(entryId) {
@@ -426,17 +487,14 @@
             ).join('');
         }
 
-        function renderEventList(events) {
-            const n = events.length;
-            document.getElementById('reviewMeta').textContent =
-                `${pendingData.entry_date}${pendingData.entry_time ? ' ' + pendingData.entry_time : ''} · ${n} event${n !== 1 ? 'ov' : ''}`;
-
-            const list = document.getElementById('eventList');
-            if (!n) {
-                list.innerHTML = '<p style="color:#888;font-size:14px;margin-bottom:8px">Žiadne eventy.</p>';
-                return;
+        function buildEventRowsHtml(events, onDelete) {
+            if (!events || !events.length) {
+                return '<p style="color:#888;font-size:14px;margin-bottom:8px">Žiadne eventy.</p>';
             }
-            list.innerHTML = events.map(ev => `
+            const delOnclick = onDelete
+                ? `this.closest('.event-item').remove(); ${onDelete}`
+                : `this.closest('.event-item').remove()`;
+            return events.map(ev => `
                 <div class="event-item">
                     <select class="input-type badge-${ev.event_type}"
                             onchange="this.className='input-type badge-'+this.value">
@@ -445,14 +503,20 @@
                     <input type="text"  class="input-time"  value="${esc(ev.event_time || '')}" placeholder="HH:MM">
                     <input type="text"  class="input-value" value="${esc(ev.value)}">
                     <input type="text"  class="input-note"  placeholder="poznámka..." value="${esc(ev.note || '')}">
-                    <button class="del-btn"
-                            onclick="this.closest('.event-item').remove(); updateReviewMeta()"
-                            title="Odstrániť">✕</button>
+                    <button class="del-btn" onclick="${delOnclick}" title="Odstrániť">✕</button>
                 </div>
             `).join('');
         }
 
+        function renderEventList(events) {
+            const n = events.length;
+            document.getElementById('reviewMeta').textContent =
+                `${pendingData.entry_date}${pendingData.entry_time ? ' ' + pendingData.entry_time : ''} · ${n} event${n !== 1 ? 'ov' : ''}`;
+            document.getElementById('eventList').innerHTML = buildEventRowsHtml(events, 'updateReviewMeta()');
+        }
+
         function updateReviewMeta() {
+            if (!pendingData) return;
             const n = document.querySelectorAll('#eventList .event-item').length;
             document.getElementById('reviewMeta').textContent =
                 `${pendingData.entry_date}${pendingData.entry_time ? ' ' + pendingData.entry_time : ''} · ${n} event${n !== 1 ? 'ov' : ''}`;
@@ -568,32 +632,39 @@
             return `<div class="entry-events">${pills}</div>`;
         }
 
+        function entryHtml(e) {
+            return `
+                <div class="entry-header">
+                    <div class="entry-meta">
+                        ${esc(e.entry_date)}${e.entry_time ? ' ' + esc(e.entry_time) : ''}
+                        ${e.author ? ' · <strong>' + esc(e.author) + '</strong>' : ''}
+                    </div>
+                    <div class="entry-btns">
+                        <button class="btn-edit-entry" onclick="openEdit(${e.id})">upraviť</button>
+                        <button class="btn-del-entry"  onclick="deleteEntry(${e.id})">zmazať</button>
+                    </div>
+                </div>
+                <div class="entry-text">${esc(e.text)}</div>
+                ${e.photo_path ? `<div class="entry-thumb"><img src="/photos/${esc(e.photo_path.replace('uploads/',''))}" onclick="openPhoto(this.src)" loading="lazy"></div>` : ''}
+                ${eventsHtml(e.events)}
+            `;
+        }
+
         async function loadEntries() {
             const search = document.getElementById('searchInput').value.trim();
             const url = search ? `/entries?search=${encodeURIComponent(search)}` : '/entries';
             const resp = await fetch(url);
             if (resp.status === 401) { location.href = '/login'; return; }
             loadedEntries = await resp.json();
+            inlineEditId = null;
             const list = document.getElementById('entryList');
             if (!loadedEntries.length) {
                 list.innerHTML = '<p style="color:#888;font-size:14px">Žiadne záznamy</p>';
                 return;
             }
             list.innerHTML = loadedEntries.map(e => `
-                <div class="entry">
-                    <div class="entry-header">
-                        <div class="entry-meta">
-                            ${esc(e.entry_date)}${e.entry_time ? ' ' + esc(e.entry_time) : ''}
-                            ${e.author ? ' · <strong>' + esc(e.author) + '</strong>' : ''}
-                        </div>
-                        <div class="entry-btns">
-                            <button class="btn-edit-entry" onclick="openEdit(${e.id})">upraviť</button>
-                            <button class="btn-del-entry"  onclick="deleteEntry(${e.id})">zmazať</button>
-                        </div>
-                    </div>
-                    <div class="entry-text">${esc(e.text)}</div>
-                    ${e.photo_path ? `<div class="entry-thumb"><img src="/photos/${esc(e.photo_path.replace('uploads/',''))}" onclick="openPhoto(this.src)" loading="lazy"></div>` : ''}
-                    ${eventsHtml(e.events)}
+                <div class="entry" id="entry-${e.id}">
+                    ${entryHtml(e)}
                 </div>
             `).join('');
         }
