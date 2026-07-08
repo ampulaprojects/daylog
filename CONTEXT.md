@@ -74,6 +74,8 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 - Časy: normalizované na HH:MM (migrácia existujúcich dát), native time picker
 - Rozhodnutie: llm_* stĺpce sa budú ukladať (audit); confirmed flag zatiaľ nechaný, rozhodne sa neskôr
 - DB: 3 users, 30 entries, ~147 events
+- Organizácia záznamov: prepínač zobrazenia (Podľa dní / Zoznam), prepínač triedenia (dátum udalosti / dátum zápisu)
+- Filtre: podľa typu eventu (režim Celé záznamy / Len eventy), podľa rozsahu dátumov, počítadlo výsledkov, zbaliteľný panel
 
 ### 2026-07-06
 - Čistá DB migrácia v2: odstránené mŕtve stĺpce (title, mood, tags, llm_*) a migračné artefakty
