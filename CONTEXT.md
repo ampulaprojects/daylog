@@ -65,6 +65,16 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 
 ## Changelog
 
+### 2026-07-08
+- Git hygiena: daylog.db a *.backup odstránené z celej git histórie (filter-repo + force push), .gitignore doplnený
+- UI Dávka 1: auto-výška textarea na mobile, event grid layout (typ+čas hore, popis a note pod)
+- UI Dávka 2: inline editor — editácia záznamu sa rozbalí na mieste, nie na vrchu stránky
+- UI Dávka 3: "Prepočítať eventy z textu" — LLM sa volá len na explicitný pokyn (text a eventy ako oddelené vrstvy)
+- Fotky: thumbnaily v zozname, autentifikovaný /photos endpoint (path traversal ochrana), fotka viditeľná počas editácie prepisu
+- Časy: normalizované na HH:MM (migrácia existujúcich dát), native time picker
+- Rozhodnutie: llm_* stĺpce sa budú ukladať (audit); confirmed flag zatiaľ nechaný, rozhodne sa neskôr
+- DB: 3 users, 30 entries, ~147 events
+
 ### 2026-07-06
 - Čistá DB migrácia v2: odstránené mŕtve stĺpce (title, mood, tags, llm_*) a migračné artefakty
 - Zmazaný register.html a update_llm_analysis() (mŕtvy kód)
