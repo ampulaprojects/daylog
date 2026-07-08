@@ -134,6 +134,20 @@
             padding: 8px 12px; margin-bottom: 6px; font-size: 13px; color: #92400e;
         }
 
+        /* ── List controls ─────────────────────────────────────────────── */
+        .list-controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+        .ctrl-group { display: flex; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; }
+        .ctrl-btn { padding: 5px 12px; font-size: 12px; background: #fff; color: #555; border: none; border-right: 1px solid #e5e7eb; cursor: pointer; white-space: nowrap; }
+        .ctrl-btn:last-child { border-right: none; }
+        .ctrl-btn.active { background: #111; color: #fff; }
+        .ctrl-btn:hover:not(.active) { background: #f5f5f5; }
+
+        /* ── Day grouping ───────────────────────────────────────────────── */
+        .day-group { margin-bottom: 16px; }
+        .day-header { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0; border-bottom: 2px solid #e5e7eb; margin-bottom: 8px; }
+        .day-date { font-size: 14px; font-weight: 600; color: #374151; }
+        .day-count { font-size: 12px; color: #9ca3af; }
+
         /* ── Entry list ─────────────────────────────────────────────────── */
         .entry { border: 1px solid #eee; border-radius: 6px; padding: 12px; margin-bottom: 10px; }
         .entry-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px; }
@@ -247,6 +261,16 @@
     <!-- ── Zoznam záznamov ────────────────────────────────────────────────── -->
     <div class="section">
         <input type="text" id="searchInput" placeholder="Hľadať...">
+        <div class="list-controls">
+            <div class="ctrl-group">
+                <button class="ctrl-btn active" id="btn-view-grouped" onclick="setViewMode('grouped')">Podľa dní</button>
+                <button class="ctrl-btn" id="btn-view-flat" onclick="setViewMode('flat')">Zoznam</button>
+            </div>
+            <div class="ctrl-group">
+                <button class="ctrl-btn active" id="btn-sort-event" onclick="setSortMode('event')">Dátum udalosti</button>
+                <button class="ctrl-btn" id="btn-sort-created" onclick="setSortMode('created')">Dátum zápisu</button>
+            </div>
+        </div>
         <div id="entryList"></div>
     </div>
 
@@ -272,6 +296,8 @@
         let pendingPhotoPath = null;
         let inlineEditId          = null;
         let inlinePreRecalcEvents = null;  // snapshot eventov spred posledného prepočtu
+        let viewMode = 'grouped';          // 'grouped' | 'flat'
+        let sortMode = 'event';            // 'event' | 'created'
 
         function today() { return new Date().toISOString().split('T')[0]; }
 
@@ -712,6 +738,84 @@
             `;
         }
 
+        // ── Zobrazenie a triedenie ───────────────────────────────────────────
+
+        const SK_MONTHS = ['januára','februára','marca','apríla','mája','júna',
+                           'júla','augusta','septembra','októbra','novembra','decembra'];
+
+        function formatSKDate(iso) {
+            if (!iso) return iso;
+            const p = iso.split('-');
+            if (p.length !== 3) return iso;
+            const [y, m, d] = p.map(Number);
+            if (!y || !m || !d) return iso;
+            return `${d}. ${SK_MONTHS[m - 1]} ${y}`;
+        }
+
+        function sortedEntries() {
+            return [...loadedEntries].sort((a, b) => {
+                if (sortMode === 'event') {
+                    const ka = (a.entry_date || '') + (a.entry_time || '');
+                    const kb = (b.entry_date || '') + (b.entry_time || '');
+                    return kb.localeCompare(ka);
+                }
+                return (b.created_at || '').localeCompare(a.created_at || '');
+            });
+        }
+
+        function groupByEntryDate(entries) {
+            const map = new Map(), order = [];
+            for (const e of entries) {
+                const k = e.entry_date || '—';
+                if (!map.has(k)) { map.set(k, []); order.push(k); }
+                map.get(k).push(e);
+            }
+            return order.map(k => ({ date: k, entries: map.get(k) }));
+        }
+
+        function countLabel(n) {
+            if (n === 1) return '1 záznam';
+            if (n < 5) return `${n} záznamy`;
+            return `${n} záznamov`;
+        }
+
+        function renderList() {
+            if (inlineEditId !== null) cancelInlineEdit(inlineEditId);
+            const entries = sortedEntries();
+            const list = document.getElementById('entryList');
+            if (!entries.length) {
+                list.innerHTML = '<p style="color:#888;font-size:14px">Žiadne záznamy</p>';
+                updateListControls();
+                return;
+            }
+            if (viewMode === 'flat') {
+                list.innerHTML = entries.map(e =>
+                    `<div class="entry" id="entry-${e.id}">${entryHtml(e)}</div>`
+                ).join('');
+            } else {
+                list.innerHTML = groupByEntryDate(entries).map(g => `
+                    <div class="day-group">
+                        <div class="day-header">
+                            <span class="day-date">${formatSKDate(g.date)}</span>
+                            <span class="day-count">${countLabel(g.entries.length)}</span>
+                        </div>
+                        ${g.entries.map(e => `<div class="entry" id="entry-${e.id}">${entryHtml(e)}</div>`).join('')}
+                    </div>
+                `).join('');
+            }
+            updateListControls();
+        }
+
+        function updateListControls() {
+            document.getElementById('btn-view-grouped').classList.toggle('active', viewMode === 'grouped');
+            document.getElementById('btn-view-flat').classList.toggle('active', viewMode === 'flat');
+            document.getElementById('btn-sort-event').classList.toggle('active', sortMode === 'event');
+            document.getElementById('btn-sort-created').classList.toggle('active', sortMode === 'created');
+        }
+
+        function setViewMode(mode) { viewMode = mode; renderList(); }
+        function setSortMode(mode) { sortMode = mode; renderList(); }
+
         async function loadEntries() {
             const search = document.getElementById('searchInput').value.trim();
             const url = search ? `/entries?search=${encodeURIComponent(search)}` : '/entries';
@@ -719,16 +823,7 @@
             if (resp.status === 401) { location.href = '/login'; return; }
             loadedEntries = await resp.json();
             inlineEditId = null;
-            const list = document.getElementById('entryList');
-            if (!loadedEntries.length) {
-                list.innerHTML = '<p style="color:#888;font-size:14px">Žiadne záznamy</p>';
-                return;
-            }
-            list.innerHTML = loadedEntries.map(e => `
-                <div class="entry" id="entry-${e.id}">
-                    ${entryHtml(e)}
-                </div>
-            `).join('');
+            renderList();
         }
 
         loadEntries();
