@@ -190,6 +190,21 @@ def get_entry(entry_id):
 
 # ── Events ─────────────────────────────────────────────────────────────────
 
+def normalize_time(s):
+    """'6:00' → '06:00', '14:25' → '14:25', unparseable/empty → as-is."""
+    if not s:
+        return s
+    parts = s.strip().split(':')
+    if len(parts) == 2:
+        try:
+            h, m = int(parts[0]), int(parts[1])
+            if 0 <= h <= 23 and 0 <= m <= 59:
+                return f"{h:02d}:{m:02d}"
+        except ValueError:
+            pass
+    return s
+
+
 def create_event(entry_id, user_id, event_type, value, event_time=None, note=None):
     conn = get_db()
     now = datetime.utcnow().isoformat()
@@ -197,7 +212,7 @@ def create_event(entry_id, user_id, event_type, value, event_time=None, note=Non
         """INSERT INTO events
            (entry_id, user_id, event_time, event_type, value, note, confirmed, created_at)
            VALUES (?,?,?,?,?,?,0,?)""",
-        (entry_id, user_id, event_time, event_type, value, note, now)
+        (entry_id, user_id, normalize_time(event_time), event_type, value, note, now)
     )
     conn.commit()
     event_id = cur.lastrowid
@@ -276,7 +291,7 @@ def replace_entry_events(entry_id: int, user_id: int, events: list):
             """INSERT INTO events
                (entry_id, user_id, event_time, event_type, value, note, confirmed, created_at)
                VALUES (?,?,?,?,?,?,1,?)""",
-            (entry_id, user_id, ev.get("event_time"), ev.get("event_type"),
+            (entry_id, user_id, normalize_time(ev.get("event_time")), ev.get("event_type"),
              ev.get("value"), ev.get("note"), now)
         )
     conn.commit()
