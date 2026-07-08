@@ -127,6 +127,12 @@
         .entry-editing { background: #f8fafc; border-color: #94a3b8; }
         .inline-edit-actions { display: flex; gap: 8px; margin-top: 12px; }
         .inline-event-list { margin: 10px 0; }
+        .inline-recalc-bar { margin: 6px 0 2px; }
+        .inline-recalc-notice {
+            display: none; flex-direction: row; align-items: center; gap: 10px; flex-wrap: wrap;
+            background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px;
+            padding: 8px 12px; margin-bottom: 6px; font-size: 13px; color: #92400e;
+        }
 
         /* ── Entry list ─────────────────────────────────────────────────── */
         .entry { border: 1px solid #eee; border-radius: 6px; padding: 12px; margin-bottom: 10px; }
@@ -264,7 +270,8 @@
         let usingCleaned     = false;
         let currentSource    = 'typed';
         let pendingPhotoPath = null;
-        let inlineEditId     = null;
+        let inlineEditId          = null;
+        let inlinePreRecalcEvents = null;  // snapshot eventov spred posledného prepočtu
 
         function today() { return new Date().toISOString().split('T')[0]; }
 
@@ -399,6 +406,7 @@
             const entry = loadedEntries.find(e => e.id === entryId);
             if (!entry) return;
             inlineEditId = entryId;
+            inlinePreRecalcEvents = null;
 
             const entryEl = document.getElementById('entry-' + entryId);
             if (!entryEl) return;
@@ -422,6 +430,14 @@
                 </div>
                 ${photoHtml}
                 <textarea class="auto-textarea" id="inline-text-${entryId}">${esc(entry.text)}</textarea>
+                <div class="inline-recalc-bar">
+                    <button class="btn-ghost btn-sm" id="inline-recalc-btn-${entryId}"
+                            onclick="recalcInlineEvents(${entryId})">Prepočítať eventy z textu</button>
+                </div>
+                <div class="inline-recalc-notice" id="inline-recalc-notice-${entryId}">
+                    <span>Eventy prepočítané z textu — skontroluj a ulož</span>
+                    <button class="btn-ghost btn-sm" onclick="revertInlineEvents(${entryId})">Vrátiť pôvodné</button>
+                </div>
                 <div class="inline-event-list" id="inline-events-${entryId}">
                     ${buildEventRowsHtml(entry.events || [])}
                 </div>
@@ -457,6 +473,7 @@
                 if (resp.status === 401) { location.href = '/login'; return; }
                 if (!resp.ok) throw new Error(await resp.text());
                 inlineEditId = null;
+                inlinePreRecalcEvents = null;
                 loadEntries();
             } catch(e) {
                 alert('Chyba: ' + e.message);
@@ -467,10 +484,55 @@
         function cancelInlineEdit(entryId) {
             const entryEl = document.getElementById('entry-' + entryId);
             const entry = loadedEntries.find(e => e.id === entryId);
-            if (!entryEl || !entry) { inlineEditId = null; return; }
+            if (!entryEl || !entry) { inlineEditId = null; inlinePreRecalcEvents = null; return; }
             entryEl.classList.remove('entry-editing');
             entryEl.innerHTML = entryHtml(entry);
             inlineEditId = null;
+            inlinePreRecalcEvents = null;
+        }
+
+        async function recalcInlineEvents(entryId) {
+            const ta = document.getElementById('inline-text-' + entryId);
+            if (!ta) return;
+            const text = ta.value.trim();
+            if (!text) return alert('Text záznamu je prázdny');
+
+            // Zachyť aktuálne eventy pred prepočtom (vrátane ručných úprav)
+            const container = document.getElementById('inline-events-' + entryId);
+            inlinePreRecalcEvents = Array.from(container.querySelectorAll('.event-item')).map(row => ({
+                event_time: row.querySelector('.input-time').value  || null,
+                event_type: row.querySelector('.input-type').value,
+                value:      row.querySelector('.input-value').value.trim(),
+                note:       row.querySelector('.input-note').value.trim() || null,
+            })).filter(ev => ev.value);
+
+            const btn = document.getElementById('inline-recalc-btn-' + entryId);
+            btn.disabled = true; btn.textContent = 'Prepočítavam...';
+            try {
+                const entryMeta = loadedEntries.find(e => e.id === entryId);
+                const resp = await fetch('/entries/extract', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, entry_date: entryMeta ? entryMeta.entry_date : '' })
+                });
+                if (resp.status === 401) { location.href = '/login'; return; }
+                if (!resp.ok) throw new Error(await resp.text());
+                const data = await resp.json();
+                container.innerHTML = buildEventRowsHtml(data.events || []);
+                document.getElementById('inline-recalc-notice-' + entryId).style.display = 'flex';
+            } catch(e) {
+                alert('Chyba prepočtu: ' + e.message);
+                inlinePreRecalcEvents = null;
+            } finally {
+                btn.disabled = false; btn.textContent = 'Prepočítať eventy z textu';
+            }
+        }
+
+        function revertInlineEvents(entryId) {
+            if (inlinePreRecalcEvents === null) return;
+            const container = document.getElementById('inline-events-' + entryId);
+            container.innerHTML = buildEventRowsHtml(inlinePreRecalcEvents);
+            document.getElementById('inline-recalc-notice-' + entryId).style.display = 'none';
+            inlinePreRecalcEvents = null;
         }
 
         async function deleteEntry(entryId) {
