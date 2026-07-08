@@ -148,6 +148,35 @@
         .day-date { font-size: 14px; font-weight: 600; color: #374151; }
         .day-count { font-size: 12px; color: #9ca3af; }
 
+        /* ── Filters ────────────────────────────────────────────────────── */
+        .filter-panel { margin-bottom: 10px; }
+        .filter-toggle { width: 100%; text-align: left; background: none; border: 1px solid #e5e7eb; color: #555; padding: 5px 12px; font-size: 13px; border-radius: 6px; cursor: pointer; }
+        .filter-toggle:hover { background: #f5f5f5; }
+        .filter-toggle.has-filters { border-color: #374151; color: #111; font-weight: 600; }
+        .filter-body { border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px 12px; margin-top: 4px; }
+        .filter-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 8px; }
+        .filter-row:last-child { margin-bottom: 0; }
+        .filter-label { font-size: 12px; color: #888; white-space: nowrap; }
+        .filter-row input[type=date] { width: auto; padding: 4px 8px; font-size: 13px; }
+        .type-chip { padding: 3px 10px; font-size: 12px; border-radius: 12px; border: 1px solid #e5e7eb; background: #fff; cursor: pointer; color: #555; }
+        .type-chip:hover { border-color: #9ca3af; }
+        .type-chip.active { color: #fff; border-color: transparent; }
+        .type-chip.active.t-liek      { background: #2563eb; }
+        .type-chip.active.t-nalada    { background: #d97706; }
+        .type-chip.active.t-spravanie { background: #7c3aed; }
+        .type-chip.active.t-jedlo     { background: #16a34a; }
+        .type-chip.active.t-aktivita  { background: #0891b2; }
+        .type-chip.active.t-spatok    { background: #1e40af; }
+        .type-chip.active.t-fyzicke   { background: #dc2626; }
+        .type-chip.active.t-poznamka  { background: #6b7280; }
+        .filter-count { font-size: 12px; color: #888; margin-bottom: 8px; }
+        .filter-mode-note { font-size: 12px; color: #9ca3af; font-style: italic; margin-bottom: 8px; }
+        .ev-row { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid #f0f0f0; font-size: 13px; flex-wrap: wrap; }
+        .ev-row:last-child { border-bottom: none; }
+        .ev-row-date { color: #888; font-size: 12px; min-width: 78px; }
+        .ev-row-time { color: #888; font-size: 12px; min-width: 42px; font-variant-numeric: tabular-nums; }
+        .ev-row-val { color: #1a1a1a; }
+
         /* ── Entry list ─────────────────────────────────────────────────── */
         .entry { border: 1px solid #eee; border-radius: 6px; padding: 12px; margin-bottom: 10px; }
         .entry-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px; }
@@ -261,6 +290,29 @@
     <!-- ── Zoznam záznamov ────────────────────────────────────────────────── -->
     <div class="section">
         <input type="text" id="searchInput" placeholder="Hľadať...">
+        <div id="filterPanel" class="filter-panel">
+            <button class="filter-toggle" id="filterToggle" onclick="toggleFilters()">Filtre ▾</button>
+            <div id="filterBody" style="display:none">
+                <div class="filter-row">
+                    <span class="filter-label">Typ:</span>
+                    <div id="typeChips" style="display:flex;flex-wrap:wrap;gap:4px"></div>
+                </div>
+                <div class="filter-row" id="filterModeRow" style="display:none">
+                    <span class="filter-label">Zobraziť:</span>
+                    <div class="ctrl-group">
+                        <button class="ctrl-btn active" id="btn-filter-entries" onclick="setFilterMode('entries')">Celé záznamy</button>
+                        <button class="ctrl-btn" id="btn-filter-events" onclick="setFilterMode('events')">Len eventy</button>
+                    </div>
+                </div>
+                <div class="filter-row">
+                    <span class="filter-label">Dátum od:</span>
+                    <input type="date" id="filterFrom" onchange="applyFilters()">
+                    <span class="filter-label">do:</span>
+                    <input type="date" id="filterTo" onchange="applyFilters()">
+                </div>
+                <button class="btn-ghost btn-sm" onclick="clearFilters()">Zrušiť filtre</button>
+            </div>
+        </div>
         <div class="list-controls">
             <div class="ctrl-group">
                 <button class="ctrl-btn active" id="btn-view-grouped" onclick="setViewMode('grouped')">Podľa dní</button>
@@ -271,6 +323,7 @@
                 <button class="ctrl-btn" id="btn-sort-created" onclick="setSortMode('created')">Dátum zápisu</button>
             </div>
         </div>
+        <div id="filterCount" class="filter-count" style="display:none"></div>
         <div id="entryList"></div>
     </div>
 
@@ -298,6 +351,11 @@
         let inlinePreRecalcEvents = null;  // snapshot eventov spred posledného prepočtu
         let viewMode = 'grouped';          // 'grouped' | 'flat'
         let sortMode = 'event';            // 'event' | 'created'
+        let filterTypes    = new Set();    // vybrané typy eventov
+        let filterMode     = 'entries';    // 'entries' | 'events'
+        let filterDateFrom = '';
+        let filterDateTo   = '';
+        let filtersOpen    = false;
 
         function today() { return new Date().toISOString().split('T')[0]; }
 
@@ -752,8 +810,8 @@
             return `${d}. ${SK_MONTHS[m - 1]} ${y}`;
         }
 
-        function sortedEntries() {
-            return [...loadedEntries].sort((a, b) => {
+        function sortedEntries(src) {
+            return [...(src !== undefined ? src : loadedEntries)].sort((a, b) => {
                 if (sortMode === 'event') {
                     const ka = (a.entry_date || '') + (a.entry_time || '');
                     const kb = (b.entry_date || '') + (b.entry_time || '');
@@ -761,6 +819,58 @@
                 }
                 return (b.created_at || '').localeCompare(a.created_at || '');
             });
+        }
+
+        function dateFilteredEntries() {
+            let e = loadedEntries;
+            if (filterDateFrom) e = e.filter(x => x.entry_date >= filterDateFrom);
+            if (filterDateTo)   e = e.filter(x => x.entry_date <= filterDateTo);
+            return e;
+        }
+
+        function filteredEntries() {
+            let e = dateFilteredEntries();
+            if (filterTypes.size > 0) {
+                e = e.filter(x => (x.events || []).some(ev => filterTypes.has(ev.event_type)));
+            }
+            return e;
+        }
+
+        function updateFilterCount(shown, total, eventsMode) {
+            const el = document.getElementById('filterCount');
+            const active = filterTypes.size > 0 || filterDateFrom || filterDateTo;
+            if (!active) { el.style.display = 'none'; return; }
+            el.style.display = 'block';
+            el.textContent = eventsMode
+                ? `Zobrazených ${shown} eventov (z ${total} záznamov)`
+                : `Zobrazených ${shown} z ${total} záznamov`;
+        }
+
+        function renderEventsMode(list) {
+            const entries = sortedEntries(dateFilteredEntries());
+            const rows = [];
+            for (const e of entries) {
+                for (const ev of (e.events || [])) {
+                    if (filterTypes.has(ev.event_type)) rows.push({ ev, entry: e });
+                }
+            }
+            updateFilterCount(rows.length, loadedEntries.length, true);
+            if (!rows.length) {
+                list.innerHTML = '<p style="color:#888;font-size:14px">Žiadne eventy</p>';
+                return;
+            }
+            list.innerHTML = `
+                <p class="filter-mode-note">Ploché zobrazenie — len vyfiltrované eventy bez kontextu záznamu</p>
+                ${rows.map(({ev, entry}) => `
+                    <div class="ev-row">
+                        <span class="ev-row-date">${esc(entry.entry_date)}</span>
+                        <span class="ev-row-time">${esc(ev.event_time || '—')}</span>
+                        <span class="badge badge-${ev.event_type}">${TYPE_LABELS[ev.event_type] || ev.event_type}</span>
+                        <span class="ev-row-val">${esc(ev.value)}</span>
+                        ${ev.note ? `<span class="ev-n">— ${esc(ev.note)}</span>` : ''}
+                    </div>
+                `).join('')}
+            `;
         }
 
         function groupByEntryDate(entries) {
@@ -781,8 +891,18 @@
 
         function renderList() {
             if (inlineEditId !== null) cancelInlineEdit(inlineEditId);
-            const entries = sortedEntries();
             const list = document.getElementById('entryList');
+
+            if (filterMode === 'events' && filterTypes.size > 0) {
+                renderEventsMode(list);
+                updateListControls();
+                return;
+            }
+
+            const filtered = filteredEntries();
+            const entries  = sortedEntries(filtered);
+            updateFilterCount(filtered.length, loadedEntries.length, false);
+
             if (!entries.length) {
                 list.innerHTML = '<p style="color:#888;font-size:14px">Žiadne záznamy</p>';
                 updateListControls();
@@ -816,6 +936,69 @@
         function setViewMode(mode) { viewMode = mode; renderList(); }
         function setSortMode(mode) { sortMode = mode; renderList(); }
 
+        // ── Filtre ───────────────────────────────────────────────────────────
+
+        function toggleFilters() {
+            filtersOpen = !filtersOpen;
+            document.getElementById('filterBody').style.display = filtersOpen ? 'block' : 'none';
+            updateFilterToggle();
+        }
+
+        function updateFilterToggle() {
+            const count = filterTypes.size + (filterDateFrom ? 1 : 0) + (filterDateTo ? 1 : 0);
+            const btn = document.getElementById('filterToggle');
+            const arrow = filtersOpen ? '▴' : '▾';
+            btn.textContent = count > 0 ? `Filtre (${count} aktívne) ${arrow}` : `Filtre ${arrow}`;
+            btn.classList.toggle('has-filters', count > 0);
+            document.getElementById('filterModeRow').style.display = filterTypes.size > 0 ? 'flex' : 'none';
+            document.getElementById('btn-filter-entries').classList.toggle('active', filterMode === 'entries');
+            document.getElementById('btn-filter-events').classList.toggle('active', filterMode === 'events');
+        }
+
+        function renderTypeChips() {
+            document.getElementById('typeChips').innerHTML = TYPES.map(t =>
+                `<button class="type-chip t-${t}${filterTypes.has(t) ? ' active' : ''}"
+                         onclick="toggleTypeFilter('${t}')">${TYPE_LABELS[t]}</button>`
+            ).join('');
+        }
+
+        function toggleTypeFilter(type) {
+            if (filterTypes.has(type)) {
+                filterTypes.delete(type);
+                if (filterTypes.size === 0) filterMode = 'entries';
+            } else {
+                filterTypes.add(type);
+            }
+            renderTypeChips();
+            updateFilterToggle();
+            renderList();
+        }
+
+        function setFilterMode(mode) {
+            filterMode = mode;
+            updateFilterToggle();
+            renderList();
+        }
+
+        function applyFilters() {
+            filterDateFrom = document.getElementById('filterFrom').value;
+            filterDateTo   = document.getElementById('filterTo').value;
+            updateFilterToggle();
+            renderList();
+        }
+
+        function clearFilters() {
+            filterTypes.clear();
+            filterMode     = 'entries';
+            filterDateFrom = '';
+            filterDateTo   = '';
+            document.getElementById('filterFrom').value = '';
+            document.getElementById('filterTo').value   = '';
+            renderTypeChips();
+            updateFilterToggle();
+            renderList();
+        }
+
         async function loadEntries() {
             const search = document.getElementById('searchInput').value.trim();
             const url = search ? `/entries?search=${encodeURIComponent(search)}` : '/entries';
@@ -827,6 +1010,7 @@
         }
 
         loadEntries();
+        renderTypeChips();
 
         // ── Diktovanie ───────────────────────────────────────────────────────
 
