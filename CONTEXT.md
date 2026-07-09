@@ -63,7 +63,22 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 - Lokálne: `.env` súbor (v .gitignore)
 - VPS: systemd drop-in `/etc/systemd/system/daylog.service.d/env.conf`
 
+## Otvorené úlohy
+
+- Vlastný Google Cloud client_id pre rclone (shared client_id sa v 2026 vypína)
+- OneDrive ako druhý backup cieľ
+- Režim liekov (medications/routines) — odložené, počkať na viac dát
+- llm_* audit zápis (rozhodnuté, neimplementované)
+- Anomálny záznam entry_date 2020-06-27 (opraviť/zmazať)
+
 ## Changelog
+
+### 2026-07-09
+- Zálohovanie: rclone + Google Drive, denná automatická šifrovaná záloha (cron 03:00 UTC)
+- backup.sh: SQLite .backup snapshot + tar (DB + uploads) + GPG AES256 + rclone upload + rotácia 14 dní
+- GPG passphrase v /etc/daylog-backup.pass (heslo uložené v Bitwardene)
+- Restore overený: obnovená DB má identické počty ako živá, fotky prítomné
+- TODO: vlastný Google client_id (shared sa v 2026 odstavuje), druhý cieľ OneDrive ako poistka
 
 ### 2026-07-08
 - Git hygiena: daylog.db a *.backup odstránené z celej git histórie (filter-repo + force push), .gitignore doplnený
