@@ -79,6 +79,8 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 - GPG passphrase v /etc/daylog-backup.pass (heslo uložené v Bitwardene)
 - Restore overený: obnovená DB má identické počty ako živá, fotky prítomné
 - TODO: vlastný Google client_id (shared sa v 2026 odstavuje), druhý cieľ OneDrive ako poistka
+- Zálohovanie rozdelené: DB šifrovane (gdrive:daylog-backups/, 14 dní rotácia), fotky samostatne cez rclone copy (gdrive:daylog-photos/, nešifrované, len prírastky, nikdy nemaže)
+- Dôvod: fotky sú veľké a nemenné, netreba ich denne re-šifrovať; sú aj tak už na Drive z telefónu
 
 ### 2026-07-08
 - Git hygiena: daylog.db a *.backup odstránené z celej git histórie (filter-repo + force push), .gitignore doplnený
