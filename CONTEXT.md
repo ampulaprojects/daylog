@@ -65,7 +65,6 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 
 ## Otvorené úlohy
 
-- Vlastný Google Cloud client_id pre rclone (shared client_id sa v 2026 vypína)
 - OneDrive ako druhý backup cieľ
 - Režim liekov (medications/routines) — odložené, počkať na viac dát
 - llm_* audit zápis (rozhodnuté, neimplementované)
@@ -79,6 +78,7 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 - GPG passphrase v /etc/daylog-backup.pass (heslo uložené v Bitwardene)
 - Restore overený: obnovená DB má identické počty ako živá, fotky prítomné
 - TODO: vlastný Google client_id (shared sa v 2026 odstavuje), druhý cieľ OneDrive ako poistka
+- Vlastný Google Cloud client_id pre rclone (OAuth desktop app, projekt My First Project, publikované do produkcie) — odstránená závislosť na shared client_id ktorý Google vypína v 2026. Client secret uložený v rclone config na VPS.
 - Zálohovanie rozdelené: DB šifrovane (gdrive:daylog-backups/, 14 dní rotácia), fotky samostatne cez rclone copy (gdrive:daylog-photos/, nešifrované, len prírastky, nikdy nemaže)
 - Dôvod: fotky sú veľké a nemenné, netreba ich denne re-šifrovať; sú aj tak už na Drive z telefónu
 
