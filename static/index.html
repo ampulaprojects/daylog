@@ -457,6 +457,8 @@
                 if (resp.status === 401) { location.href = '/login'; return; }
                 if (!resp.ok) throw new Error(await resp.text());
                 const data = await resp.json();
+                pendingData.llm_raw   = data.llm_raw   || null;
+                pendingData.llm_model = data.llm_model || null;
                 showReview(data.events, data.cleaned_text);
             } catch(e) { alert('Chyba extrakcie: ' + e.message); }
             finally { btn.disabled = false; btn.textContent = 'Uložiť'; }

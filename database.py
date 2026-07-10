@@ -120,14 +120,17 @@ def set_user_role(username: str, role: str):
 
 # ── Entries ────────────────────────────────────────────────────────────────
 
-def create_entry(entry_date, text, entry_time=None, source="typed", user_id=None, photo_path=None):
+def create_entry(entry_date, text, entry_time=None, source="typed", user_id=None, photo_path=None,
+                 llm_analysis=None, llm_model=None, llm_processed_at=None):
     conn = get_db()
     now = datetime.utcnow().isoformat()
     cur = conn.execute(
         """INSERT INTO entries
-           (user_id, created_at, entry_date, entry_time, text, source, photo_path)
-           VALUES (?,?,?,?,?,?,?)""",
-        (user_id, now, entry_date, entry_time, text, source, photo_path)
+           (user_id, created_at, entry_date, entry_time, text, source, photo_path,
+            llm_analysis, llm_model, llm_processed_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        (user_id, now, entry_date, entry_time, text, source, photo_path,
+         llm_analysis, llm_model, llm_processed_at)
     )
     conn.commit()
     entry_id = cur.lastrowid

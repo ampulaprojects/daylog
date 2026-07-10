@@ -35,12 +35,15 @@ Príklad výstupu:
 {"cleaned_text": "...", "events": [{"event_time": "08:00", "event_type": "aktivita", "value": "vstal", "note": null}]}"""
 
 
+MODEL_NAME = "claude-sonnet-4-6"
+
+
 def extract_events(text: str, entry_date: str):
     client = _get_client()
     user_message = f"Dátum: {entry_date}\n\nText:\n{text}"
 
     response = client.messages.create(
-        model="claude-sonnet-4-6",
+        model=MODEL_NAME,
         max_tokens=1536,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_message}]
@@ -62,7 +65,7 @@ def extract_events(text: str, entry_date: str):
         if ev.get("event_type") not in valid_types:
             ev["event_type"] = "poznamka"
 
-    return events, cleaned_text, raw
+    return events, cleaned_text, raw, MODEL_NAME
 
 
 def _parse_llm_json(raw: str, fallback_text: str) -> dict | list:

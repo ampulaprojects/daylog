@@ -143,6 +143,8 @@ class ConfirmRequest(BaseModel):
     source: Optional[str] = "typed"
     events: List[EventItem]
     photo_path: Optional[str] = None
+    llm_raw: Optional[str] = None
+    llm_model: Optional[str] = None
 
 
 @app.post("/entries/transcribe")
@@ -168,14 +170,15 @@ async def entries_transcribe(file: UploadFile = File(...), user=Depends(require_
 @app.post("/entries/extract")
 def entries_extract(body: ExtractRequest, user=Depends(require_auth)):
     try:
-        events, cleaned_text, _ = extract_events(body.text, body.entry_date)
+        events, cleaned_text, llm_raw, llm_model = extract_events(body.text, body.entry_date)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLM chyba: {e}")
-    return {"events": events, "cleaned_text": cleaned_text}
+    return {"events": events, "cleaned_text": cleaned_text, "llm_raw": llm_raw, "llm_model": llm_model}
 
 
 @app.post("/entries/confirm", status_code=201)
 def entries_confirm(body: ConfirmRequest, user=Depends(require_auth)):
+    llm_processed_at = datetime.utcnow().isoformat() if body.llm_raw else None
     entry_id = create_entry(
         entry_date=body.entry_date,
         text=body.text,
@@ -183,6 +186,9 @@ def entries_confirm(body: ConfirmRequest, user=Depends(require_auth)):
         source=body.source,
         user_id=user["id"],
         photo_path=body.photo_path,
+        llm_analysis=body.llm_raw,
+        llm_model=body.llm_model,
+        llm_processed_at=llm_processed_at,
     )
     for ev in body.events:
         create_event(
