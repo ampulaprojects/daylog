@@ -67,10 +67,13 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 
 - OneDrive ako druhý backup cieľ
 - Režim liekov (medications/routines) — odložené, počkať na viac dát
-- llm_* audit zápis (rozhodnuté, neimplementované)
-- Anomálny záznam entry_date 2020-06-27 (opraviť/zmazať)
 
 ## Changelog
+
+### 2026-07-10
+- llm_* audit: pri LLM extrakcii sa ukladá llm_model, llm_analysis (surová odpoveď), llm_processed_at; priamy zápis bez LLM ponecháva NULL
+- MODEL_NAME konštanta v llm.py (názov modelu na jednom mieste)
+- Oprava anomálie: záznam #20 mal zle prečítaný rok z fotky (2020→2026)
 
 ### 2026-07-09
 - Zálohovanie: rclone + Google Drive, denná automatická šifrovaná záloha (cron 03:00 UTC)
