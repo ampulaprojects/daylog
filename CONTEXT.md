@@ -68,7 +68,17 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 - OneDrive ako druhý backup cieľ
 - Režim liekov (medications/routines) — odložené, počkať na viac dát
 
+## Poznámky / pasce
+
+- Windows git neukladá execute bit — pri nových shell skriptoch treba `git update-index --chmod=+x` pred commitom
+
 ## Changelog
+
+### 2026-07-12
+- Desktop layout: dvojzónový responzívny (formulár vľavo sticky, záznamy + ovládače vpravo), max-šírka 1300px; mobil ostáva jednostĺpcový cez media query
+- Fix: backup.sh stratil execute bit pri git pull (Windows git neukladá +x) — nastavené natrvalo cez git update-index --chmod=+x; cron backup preto medzi 10.-12.7. nebežal
+- Fix: duplicitné logovanie backupu (tee + cron redirect) — cron už nepresmerováva stdout, stderr ide do daylog-backup-cron-err.log
+- Overené: cron reálne spúšťa backup (test o 19:57 UTC)
 
 ### 2026-07-10
 - llm_* audit: pri LLM extrakcii sa ukladá llm_model, llm_analysis (surová odpoveď), llm_processed_at; priamy zápis bez LLM ponecháva NULL
