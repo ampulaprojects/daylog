@@ -6,7 +6,7 @@
     <title>daylog</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: system-ui, sans-serif; max-width: 700px; margin: 0 auto; padding: 16px; }
+        body { font-family: system-ui, sans-serif; margin: 0; }
         h1 { font-size: 20px; }
         h2 { font-size: 15px; font-weight: 600; margin-bottom: 10px; }
         textarea { width: 100%; padding: 8px; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; resize: vertical; font-family: inherit; }
@@ -210,18 +210,42 @@
             z-index: 1000; cursor: zoom-out;
         }
         #photoOverlay img { max-width: 95vw; max-height: 95vh; border-radius: 6px; cursor: default; }
+
+        /* ── Two-zone page layout ────────────────────────────────────────── */
+        .page-wrap { max-width: 1300px; margin: 0 auto; padding: 16px; }
+        .page-header { margin-bottom: 16px; }
+        .page-layout { display: flex; flex-direction: column; }
+        .layout-left, .layout-right { min-width: 0; }
+
+        @media (min-width: 900px) {
+            .page-layout {
+                display: grid;
+                grid-template-columns: 360px 1fr;
+                column-gap: 32px;
+                align-items: start;
+            }
+            .layout-left {
+                position: sticky;
+                top: 16px;
+            }
+        }
     </style>
 </head>
 <body>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-        <h1>daylog</h1>
-        <div style="display:flex;gap:10px;align-items:center">
-            <a href="/profile" style="font-size:13px;color:#888;text-decoration:none">Profil</a>
-            <form method="POST" action="/logout">
-                <button type="submit" class="btn-ghost" style="padding:6px 12px;font-size:13px">Odhlásiť</button>
-            </form>
+<div class="page-wrap">
+    <div class="page-header">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+            <h1>daylog</h1>
+            <div style="display:flex;gap:10px;align-items:center">
+                <a href="/profile" style="font-size:13px;color:#888;text-decoration:none">Profil</a>
+                <form method="POST" action="/logout">
+                    <button type="submit" class="btn-ghost" style="padding:6px 12px;font-size:13px">Odhlásiť</button>
+                </form>
+            </div>
         </div>
-    </div>
+    </div><!-- /page-header -->
+    <div class="page-layout">
+        <div class="layout-left">
 
     <!-- ── Formulár ───────────────────────────────────────────────────────── -->
     <div class="section" id="formSection">
@@ -287,6 +311,9 @@
         </div>
     </div>
 
+        </div><!-- /layout-left -->
+        <div class="layout-right">
+
     <!-- ── Zoznam záznamov ────────────────────────────────────────────────── -->
     <div class="section">
         <input type="text" id="searchInput" placeholder="Hľadať...">
@@ -326,6 +353,10 @@
         <div id="filterCount" class="filter-count" style="display:none"></div>
         <div id="entryList"></div>
     </div>
+
+        </div><!-- /layout-right -->
+    </div><!-- /page-layout -->
+</div><!-- /page-wrap -->
 
     <!-- ── Lightbox overlay ──────────────────────────────────────────────── -->
     <div id="photoOverlay" onclick="closePhoto()">
