@@ -118,20 +118,23 @@
         .med-btns { display: flex; gap: 4px; flex-wrap: wrap; }
 
         /* ── Drag handle & arrows ────────────────────────────────────────── */
-        .med-reorder { display: flex; align-items: center; gap: 1px; flex-shrink: 0; margin-right: 2px; }
+        .med-reorder { display: flex; align-items: center; gap: 2px; flex-shrink: 0; margin-right: 4px; }
         .drag-handle {
             cursor: grab; color: #d1d5db; font-size: 18px;
             user-select: none; -webkit-user-select: none;
-            padding: 0 3px; line-height: 1; touch-action: none;
+            padding: 0 4px; line-height: 1; touch-action: none;
+            min-height: 38px; display: flex; align-items: center;
         }
         .drag-handle:hover  { color: #9ca3af; }
         .drag-handle:active { cursor: grabbing; }
-        .reorder-arrows { display: flex; flex-direction: column; }
+        .reorder-arrows { display: flex; flex-direction: row; gap: 2px; }
         .arrow-btn {
-            background: none; border: none; color: #d1d5db; font-size: 11px;
-            padding: 1px 3px; cursor: pointer; line-height: 1.3; border-radius: 3px;
+            background: none; border: none; color: #9ca3af; font-size: 15px;
+            min-width: 38px; min-height: 38px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 6px; padding: 0;
         }
-        .arrow-btn:hover { color: #6b7280; background: #f3f4f6; }
+        .arrow-btn:hover { color: #4b5563; background: #f3f4f6; }
 
         /* ── SortableJS states ───────────────────────────────────────────── */
         .sortable-ghost  { opacity: 0.35; background: #e0e7ff; border-color: #818cf8; }
