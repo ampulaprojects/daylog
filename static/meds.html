@@ -496,7 +496,8 @@
 
     function renderMeds() {
         const list = document.getElementById('medList');
-        const visible = showInactive ? meds : meds.filter(m => m.active);
+        const visible = (showInactive ? meds : meds.filter(m => m.active))
+            .slice().sort((a, b) => (a.sort_order - b.sort_order) || (a.id - b.id));
 
         if (!visible.length) {
             list.innerHTML = '<div class="empty-state">Žiadne lieky.<br>Pridaj prvý liek formulárom vľavo.</div>';
@@ -539,15 +540,16 @@
     }
 
     function onSortEnd() {
-        // Collect all cards across all groups in DOM order
         const cards = [...document.querySelectorAll('#medList .med-card[id^="med-"]')];
         const ordered = cards.map((card, i) => {
             const id = parseInt(card.id.slice(4));
             const m = meds.find(x => x.id === id);
-            if (m) m.sort_order = i * 10;
+            if (m) m.sort_order = i * 10;   // sync local array → renderMeds() will use this
             return { id, sort_order: i * 10 };
         });
         sendReorder(ordered);
+        // Re-render so group headers stay consistent after cross-group visual drop
+        renderMeds();
     }
 
     async function sendReorder(items) {
@@ -726,8 +728,6 @@
     loadMeds();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js"
-        integrity="sha512-RE79o195aTrue3Y8nWLLe3/just42A8WUQG8QEOYKeFacABPGoHHiBRQ1u3gn1Dq9S/K0CWP3TiNmEOj0bSPBKw=="
-        crossorigin="anonymous" referrerpolicy="no-referrer"
         onload="initSortable()"></script>
 </body>
 </html>
