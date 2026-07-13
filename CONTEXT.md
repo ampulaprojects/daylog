@@ -66,13 +66,20 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 ## Otvorené úlohy
 
 - OneDrive ako druhý backup cieľ
-- Režim liekov (medications/routines) — odložené, počkať na viac dát
+- Režim liekov Fáza 1 (evidencia) — HOTOVÉ; Fáza 2 (porovnanie eventov s režimom, detekcia odchýlok) — odložené
 
 ## Poznámky / pasce
 
 - Windows git neukladá execute bit — pri nových shell skriptoch treba `git update-index --chmod=+x` pred commitom
 
 ## Changelog
+
+### 2026-07-13
+- Sekcia Lieky (/meds): editovateľný režim liekov syna, odkaz v hlavičke
+- Tabuľka med_schedule: name, kind (liek/vitamín/doplnok), count (REAL), dose, unit, time_exact (HH:MM) + time_value (popis), days (kazdy_den/pri_krize/konkrétne dni), note, active, sort_order
+- UI: pridať/upraviť (inline na mieste)/deaktivovať/zmazať, množstvo cez tlačidlá (¼-3) + číselné pole, frekvencia s výberom dní (Po-Ne), drag & drop poradie (SortableJS + šípky fallback)
+- Seed: 7 liekov z reálnych dát (Orfiril, Tisercin, Fevarin, Chlorprotixen) s normalizovanými názvami
+- Fáza 2 (porovnanie so skutočnými eventmi) odložená
 
 ### 2026-07-12
 - Desktop layout: dvojzónový responzívny (formulár vľavo sticky, záznamy + ovládače vpravo), max-šírka 1300px; mobil ostáva jednostĺpcový cez media query
