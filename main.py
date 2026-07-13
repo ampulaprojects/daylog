@@ -13,7 +13,7 @@ from database import (
     create_entry, get_entries, get_entry, create_event,
     delete_entry, update_entry_text, replace_entry_events,
     get_medications, create_medication, update_medication,
-    delete_medication, set_medication_active
+    delete_medication, set_medication_active, reorder_medications
 )
 from auth import verify_password, create_session_token, decode_session_token
 from llm import extract_events, transcribe_photo
@@ -304,6 +304,17 @@ def add_medication(body: MedBody, user=Depends(require_auth)):
         sort_order=body.sort_order
     )
     return {"id": med_id}
+
+
+class ReorderItem(BaseModel):
+    id: int
+    sort_order: int
+
+
+@app.put("/medications/reorder")
+def reorder_meds_endpoint(items: List[ReorderItem], user=Depends(require_auth)):
+    reorder_medications([(item.id, item.sort_order) for item in items])
+    return {"ok": True}
 
 
 @app.put("/medications/{med_id}")

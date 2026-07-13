@@ -388,3 +388,14 @@ def set_medication_active(med_id, active):
                  (int(active), now, med_id))
     conn.commit()
     conn.close()
+
+
+def reorder_medications(items):
+    """items: list of (id, sort_order) tuples"""
+    conn = get_db()
+    now = datetime.utcnow().isoformat()
+    for med_id, sort_order in items:
+        conn.execute("UPDATE med_schedule SET sort_order=?, updated_at=? WHERE id=?",
+                     (sort_order, now, med_id))
+    conn.commit()
+    conn.close()

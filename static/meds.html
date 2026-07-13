@@ -18,11 +18,11 @@
         button { padding: 8px 16px; background: #000; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
         button:hover { opacity: 0.8; }
         button:disabled { opacity: 0.45; cursor: default; }
-        .btn-ghost { background: #eee; color: #333; }
-        .btn-sm { padding: 4px 10px; font-size: 12px; }
+        .btn-ghost  { background: #eee; color: #333; }
+        .btn-sm     { padding: 4px 10px; font-size: 12px; }
         .btn-danger { background: none; color: #d1d5db; border: 1px solid #e5e7eb; border-radius: 4px; font-size: 11px; padding: 2px 7px; cursor: pointer; }
         .btn-danger:hover { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
-        .btn-muted { background: none; color: #aaa; border: 1px solid #e5e7eb; border-radius: 4px; font-size: 11px; padding: 2px 7px; cursor: pointer; }
+        .btn-muted  { background: none; color: #aaa; border: 1px solid #e5e7eb; border-radius: 4px; font-size: 11px; padding: 2px 7px; cursor: pointer; }
         .btn-muted:hover { background: #f5f5f5; color: #333; border-color: #ccc; }
         .section { margin-bottom: 24px; }
         .form-group { margin-bottom: 10px; }
@@ -33,7 +33,7 @@
 
         /* ── Count picker ────────────────────────────────────────────────── */
         .count-row { display: flex; align-items: center; gap: 6px; }
-        .count-row .count-picker { display: flex; gap: 3px; flex-wrap: nowrap; }
+        .count-row .count-picker { display: flex; gap: 3px; }
         .count-number { width: 72px !important; flex-shrink: 0; }
         .count-btn {
             padding: 6px 0; font-size: 15px; background: #f3f4f6;
@@ -51,9 +51,7 @@
         .badge-inactive { background: #9ca3af; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; color: #fff; }
 
         /* ── Days mode picker ────────────────────────────────────────────── */
-        .days-mode-picker {
-            display: flex; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden;
-        }
+        .days-mode-picker { display: flex; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; }
         .days-mode-btn {
             flex: 1; padding: 7px 4px; font-size: 12px; background: #fff;
             color: #555; border: none; border-right: 1px solid #e5e7eb; cursor: pointer; text-align: center;
@@ -88,7 +86,7 @@
             .layout-left { position: sticky; top: 16px; }
         }
 
-        /* ── Form panel (add form) ───────────────────────────────────────── */
+        /* ── Form panel ──────────────────────────────────────────────────── */
         .form-panel { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; background: #fafafa; }
         .form-panel h2 { margin-bottom: 14px; }
         .form-actions { display: flex; gap: 8px; margin-top: 14px; }
@@ -111,13 +109,33 @@
         .med-card.inactive { opacity: 0.45; }
         .med-card.editing  { border-color: #94a3b8; background: #f8fafc; }
         .med-top { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
-        .med-name { font-size: 15px; font-weight: 600; color: #111; flex: 1; }
+        .med-name { font-size: 15px; font-weight: 600; color: #111; flex: 1; min-width: 0; }
         .med-name.inactive-name { text-decoration: line-through; color: #9ca3af; }
         .med-detail { font-size: 13px; color: #555; display: flex; flex-wrap: wrap; gap: 6px 12px; margin-bottom: 6px; }
         .med-detail-item { display: flex; align-items: center; gap: 4px; }
         .med-detail-label { font-size: 11px; color: #9ca3af; }
         .med-note { font-size: 12px; color: #888; font-style: italic; margin-bottom: 6px; }
         .med-btns { display: flex; gap: 4px; flex-wrap: wrap; }
+
+        /* ── Drag handle & arrows ────────────────────────────────────────── */
+        .med-reorder { display: flex; align-items: center; gap: 1px; flex-shrink: 0; margin-right: 2px; }
+        .drag-handle {
+            cursor: grab; color: #d1d5db; font-size: 18px;
+            user-select: none; -webkit-user-select: none;
+            padding: 0 3px; line-height: 1; touch-action: none;
+        }
+        .drag-handle:hover  { color: #9ca3af; }
+        .drag-handle:active { cursor: grabbing; }
+        .reorder-arrows { display: flex; flex-direction: column; }
+        .arrow-btn {
+            background: none; border: none; color: #d1d5db; font-size: 11px;
+            padding: 1px 3px; cursor: pointer; line-height: 1.3; border-radius: 3px;
+        }
+        .arrow-btn:hover { color: #6b7280; background: #f3f4f6; }
+
+        /* ── SortableJS states ───────────────────────────────────────────── */
+        .sortable-ghost  { opacity: 0.35; background: #e0e7ff; border-color: #818cf8; }
+        .sortable-chosen { background: #f8fafc; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
 
         /* ── Inline edit ─────────────────────────────────────────────────── */
         .inline-edit .form-group { margin-bottom: 8px; }
@@ -228,11 +246,6 @@
                     <input type="text" id="fNote" placeholder="napr. obsesívne stavy, pred jedlom...">
                 </div>
 
-                <div class="form-group">
-                    <label>Poradie <span style="color:#bbb;font-size:11px">(nižšie = vyššie)</span></label>
-                    <input type="number" id="fSortOrder" value="0" min="0" style="width:80px">
-                </div>
-
                 <div class="form-actions">
                     <button id="saveBtn" onclick="saveMed()">Uložiť</button>
                 </div>
@@ -256,12 +269,13 @@
     let meds = [];
     let editingId = null;
     let showInactive = false;
+    let sortableInstances = [];
 
     const KIND_LABELS = { liek: 'liek', vitamin: 'vitamín', doplnok: 'doplnok' };
-    const TIME_GROUPS = ['Ráno', 'Poludnie', 'Večer', 'Pri kríze', 'Ostatné'];
-    const COUNT_SYMS  = { 0.25: '¼', 0.5: '½', 0.75: '¾' };
-    const WD_KEYS  = ['po', 'ut', 'str', 'stv', 'pi', 'so', 'ne'];
-    const WD_LABELS = { po: 'Po', ut: 'Ut', str: 'St', stv: 'Št', pi: 'Pi', so: 'So', ne: 'Ne' };
+    const TIME_GROUPS  = ['Ráno', 'Poludnie', 'Večer', 'Pri kríze', 'Ostatné'];
+    const COUNT_SYMS   = { 0.25: '¼', 0.5: '½', 0.75: '¾' };
+    const WD_KEYS      = ['po', 'ut', 'str', 'stv', 'pi', 'so', 'ne'];
+    const WD_LABELS    = { po: 'Po', ut: 'Ut', str: 'St', stv: 'Št', pi: 'Pi', so: 'So', ne: 'Ne' };
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -306,7 +320,7 @@
         return 'Ostatné';
     }
 
-    // ── DOM event handlers (scoped via closest) ───────────────────────────────
+    // ── Form DOM handlers (scoped via closest) ────────────────────────────────
 
     function selectCount(btn) {
         const input = btn.closest('.count-row').querySelector('input[type=number]');
@@ -328,17 +342,15 @@
         field.querySelector('.weekday-picker').style.display = btn.dataset.mode === 'konkretne' ? '' : 'none';
     }
 
-    function toggleWeekday(btn) {
-        btn.classList.toggle('active');
-    }
+    function toggleWeekday(btn) { btn.classList.toggle('active'); }
 
     function getDaysValue(fieldId) {
         const field = document.getElementById(fieldId);
         const mode = field.querySelector('.days-mode-btn.active')?.dataset.mode;
         if (!mode || mode === 'kazdy_den') return 'kazdy_den';
         if (mode === 'pri_krize') return 'pri_krize';
-        const selected = [...field.querySelectorAll('.weekday-btn.active')].map(b => b.dataset.day);
-        return selected.length ? selected.join(',') : 'kazdy_den';
+        const sel = [...field.querySelectorAll('.weekday-btn.active')].map(b => b.dataset.day);
+        return sel.length ? sel.join(',') : 'kazdy_den';
     }
 
     // ── HTML builders ─────────────────────────────────────────────────────────
@@ -416,15 +428,9 @@
             <label>Frekvencia</label>
             ${daysModeHtml(m.days||'kazdy_den', 'ie-days-field')}
           </div>
-          <div class="form-row">
-            <div class="form-group" style="flex:2">
-              <label>Poznámka</label>
-              <input type="text" id="ie-note" value="${esc(m.note||'')}">
-            </div>
-            <div class="form-group" style="flex:0 0 80px">
-              <label>Poradie</label>
-              <input type="number" id="ie-sort-order" min="0" value="${m.sort_order??0}">
-            </div>
+          <div class="form-group">
+            <label>Poznámka</label>
+            <input type="text" id="ie-note" value="${esc(m.note||'')}">
           </div>
           <div class="form-actions">
             <button id="ie-save-btn" onclick="saveInlineEdit(${m.id})">Uložiť</button>
@@ -459,6 +465,13 @@
 
         return `<div class="med-card${inactive?' inactive':''}" id="med-${m.id}">
           <div class="med-top">
+            <div class="med-reorder">
+              <span class="drag-handle" title="Presunúť">⠿</span>
+              <div class="reorder-arrows">
+                <button type="button" class="arrow-btn" onclick="moveCard(${m.id},-1)" title="Vyššie">↑</button>
+                <button type="button" class="arrow-btn" onclick="moveCard(${m.id},1)"  title="Nižšie">↓</button>
+              </div>
+            </div>
             <span class="med-name${inactive?' inactive-name':''}">${esc(m.name)}</span>
             ${kindBadge} ${inactiveBadge}
           </div>
@@ -472,7 +485,7 @@
         </div>`;
     }
 
-    // ── App logic ─────────────────────────────────────────────────────────────
+    // ── Render & Sortable ─────────────────────────────────────────────────────
 
     async function loadMeds() {
         const resp = await fetch('/medications?include_inactive=true');
@@ -487,6 +500,7 @@
 
         if (!visible.length) {
             list.innerHTML = '<div class="empty-state">Žiadne lieky.<br>Pridaj prvý liek formulárom vľavo.</div>';
+            initSortable();
             return;
         }
 
@@ -502,7 +516,74 @@
             html += `</div>`;
         });
         list.innerHTML = html;
+        initSortable();
     }
+
+    function initSortable() {
+        sortableInstances.forEach(s => s.destroy());
+        sortableInstances = [];
+        if (typeof Sortable === 'undefined') return;
+        document.querySelectorAll('#medList .time-group').forEach(group => {
+            sortableInstances.push(Sortable.create(group, {
+                handle:       '.drag-handle',
+                draggable:    '.med-card',
+                animation:    150,
+                ghostClass:   'sortable-ghost',
+                chosenClass:  'sortable-chosen',
+                // Delay on touch to distinguish tap from drag
+                delay:        100,
+                delayOnTouchOnly: true,
+                onEnd: onSortEnd,
+            }));
+        });
+    }
+
+    function onSortEnd() {
+        // Collect all cards across all groups in DOM order
+        const cards = [...document.querySelectorAll('#medList .med-card[id^="med-"]')];
+        const ordered = cards.map((card, i) => {
+            const id = parseInt(card.id.slice(4));
+            const m = meds.find(x => x.id === id);
+            if (m) m.sort_order = i * 10;
+            return { id, sort_order: i * 10 };
+        });
+        sendReorder(ordered);
+    }
+
+    async function sendReorder(items) {
+        try {
+            const resp = await fetch('/medications/reorder', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(items.map(x => ({ id: x.id, sort_order: x.sort_order })))
+            });
+            if (!resp.ok) console.error('Reorder failed:', await resp.text());
+        } catch(e) { console.error('Reorder error:', e); }
+    }
+
+    async function moveCard(id, dir) {
+        const m = meds.find(x => x.id === id);
+        if (!m) return;
+        const grp = getTimeGroup(m);
+        const inGroup = (showInactive ? meds : meds.filter(x => x.active))
+            .filter(x => getTimeGroup(x) === grp)
+            .sort((a, b) => a.sort_order - b.sort_order || a.id - b.id);
+
+        // Normalize first to avoid duplicate sort_order collisions
+        inGroup.forEach((x, i) => { x.sort_order = i * 10; });
+
+        const idx = inGroup.findIndex(x => x.id === id);
+        const target = idx + dir;
+        if (target < 0 || target >= inGroup.length) return;
+
+        [inGroup[idx].sort_order, inGroup[target].sort_order] =
+            [inGroup[target].sort_order, inGroup[idx].sort_order];
+
+        await sendReorder(inGroup);
+        renderMeds();
+    }
+
+    // ── App actions ───────────────────────────────────────────────────────────
 
     function startEdit(id) {
         if (editingId === id) return;
@@ -518,6 +599,7 @@
     }
 
     async function saveInlineEdit(id) {
+        const m = meds.find(x => x.id === id);
         const name = document.getElementById('ie-name').value.trim();
         if (!name) { alert('Zadaj názov lieku'); document.getElementById('ie-name').focus(); return; }
 
@@ -534,7 +616,7 @@
             time_value: document.getElementById('ie-time-value').value.trim() || null,
             days:       getDaysValue('ie-days-field'),
             note:       document.getElementById('ie-note').value.trim() || null,
-            sort_order: parseInt(document.getElementById('ie-sort-order').value) || 0,
+            sort_order: m?.sort_order ?? 0,
         };
 
         const btn = document.getElementById('ie-save-btn');
@@ -572,7 +654,7 @@
             time_value: document.getElementById('fTimeValue').value.trim() || null,
             days:       getDaysValue('f-days-field'),
             note:       document.getElementById('fNote').value.trim() || null,
-            sort_order: parseInt(document.getElementById('fSortOrder').value) || 0,
+            sort_order: 0,
         };
 
         const btn = document.getElementById('saveBtn');
@@ -597,11 +679,11 @@
     function resetAddForm() {
         document.getElementById('fName').value = '';
         document.getElementById('fKind').value = 'liek';
-        const fCountInput = document.getElementById('f-count');
-        fCountInput.value = '';
-        fCountInput.closest('.count-row').querySelectorAll('.count-btn').forEach(b => b.classList.remove('active'));
-        document.getElementById('fDose').value = '';
-        document.getElementById('fUnit').value = '';
+        const fc = document.getElementById('f-count');
+        fc.value = '';
+        fc.closest('.count-row').querySelectorAll('.count-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById('fDose').value      = '';
+        document.getElementById('fUnit').value      = '';
         document.getElementById('fTimeExact').value = '';
         document.getElementById('fTimeValue').value = '';
         const df = document.getElementById('f-days-field');
@@ -609,7 +691,6 @@
         df.querySelector('.weekday-picker').style.display = 'none';
         df.querySelectorAll('.weekday-btn').forEach(b => b.classList.remove('active'));
         document.getElementById('fNote').value = '';
-        document.getElementById('fSortOrder').value = '0';
     }
 
     async function deleteMed(id) {
@@ -636,13 +717,17 @@
 
     document.addEventListener('keydown', e => {
         if (e.key === 'Enter' && e.target.tagName === 'INPUT') {
-            if (document.activeElement.closest('.inline-edit')) { saveInlineEdit(editingId); }
-            else if (document.activeElement.closest('.form-panel')) { saveMed(); }
+            if (document.activeElement.closest('.inline-edit')) saveInlineEdit(editingId);
+            else if (document.activeElement.closest('.form-panel')) saveMed();
         }
-        if (e.key === 'Escape' && editingId !== null) { cancelEdit(); }
+        if (e.key === 'Escape' && editingId !== null) cancelEdit();
     });
 
     loadMeds();
 </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js"
+        integrity="sha512-RE79o195aTrue3Y8nWLLe3/just42A8WUQG8QEOYKeFacABPGoHHiBRQ1u3gn1Dq9S/K0CWP3TiNmEOj0bSPBKw=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"
+        onload="initSortable()"></script>
 </body>
 </html>
