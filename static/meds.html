@@ -14,9 +14,7 @@
             border: 1px solid #ccc; border-radius: 6px; font-family: inherit;
         }
         input[type=text]:focus, input[type=time]:focus, input[type=number]:focus,
-        select:focus, textarea:focus {
-            outline: none; border-color: #6b7280;
-        }
+        select:focus, textarea:focus { outline: none; border-color: #6b7280; }
         button { padding: 8px 16px; background: #000; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
         button:hover { opacity: 0.8; }
         button:disabled { opacity: 0.45; cursor: default; }
@@ -31,13 +29,16 @@
         .form-row { display: flex; gap: 8px; }
         .form-row > * { flex: 1; min-width: 0; }
         label { font-size: 13px; color: #555; display: block; margin-bottom: 4px; }
+        .field-hint { font-size: 11px; color: #9ca3af; margin-top: 3px; }
 
         /* ── Count picker ────────────────────────────────────────────────── */
-        .count-picker { display: flex; gap: 4px; flex-wrap: wrap; }
+        .count-row { display: flex; align-items: center; gap: 6px; }
+        .count-row .count-picker { display: flex; gap: 3px; flex-wrap: nowrap; }
+        .count-number { width: 72px !important; flex-shrink: 0; }
         .count-btn {
             padding: 6px 0; font-size: 15px; background: #f3f4f6;
             color: #374151; border: 1px solid #e5e7eb; border-radius: 6px;
-            cursor: pointer; min-width: 38px; text-align: center;
+            cursor: pointer; width: 36px; text-align: center;
         }
         .count-btn:hover { background: #e5e7eb; }
         .count-btn.active { background: #111; color: #fff; border-color: #111; }
@@ -47,6 +48,29 @@
         .badge-liek    { background: #2563eb; }
         .badge-vitamin { background: #16a34a; }
         .badge-doplnok { background: #d97706; }
+        .badge-inactive { background: #9ca3af; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; color: #fff; }
+
+        /* ── Days mode picker ────────────────────────────────────────────── */
+        .days-mode-picker {
+            display: flex; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden;
+        }
+        .days-mode-btn {
+            flex: 1; padding: 7px 4px; font-size: 12px; background: #fff;
+            color: #555; border: none; border-right: 1px solid #e5e7eb; cursor: pointer; text-align: center;
+        }
+        .days-mode-btn:last-child { border-right: none; }
+        .days-mode-btn:hover { background: #f3f4f6; }
+        .days-mode-btn.active { background: #111; color: #fff; }
+
+        /* ── Weekday picker ──────────────────────────────────────────────── */
+        .weekday-picker { display: flex; gap: 4px; flex-wrap: wrap; }
+        .weekday-btn {
+            padding: 5px 0; font-size: 12px; background: #f3f4f6;
+            color: #374151; border: 1px solid #e5e7eb; border-radius: 6px;
+            cursor: pointer; width: 34px; text-align: center;
+        }
+        .weekday-btn:hover { background: #e5e7eb; }
+        .weekday-btn.active { background: #111; color: #fff; border-color: #111; }
 
         /* ── Page layout ─────────────────────────────────────────────────── */
         .page-wrap { max-width: 1300px; margin: 0 auto; padding: 16px; }
@@ -64,14 +88,10 @@
             .layout-left { position: sticky; top: 16px; }
         }
 
-        /* ── Form panel ──────────────────────────────────────────────────── */
-        .form-panel {
-            border: 1px solid #e5e7eb; border-radius: 8px;
-            padding: 16px; background: #fafafa;
-        }
+        /* ── Form panel (add form) ───────────────────────────────────────── */
+        .form-panel { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; background: #fafafa; }
         .form-panel h2 { margin-bottom: 14px; }
         .form-actions { display: flex; gap: 8px; margin-top: 14px; }
-        .field-hint { font-size: 11px; color: #9ca3af; margin-top: 3px; }
 
         /* ── Med list ────────────────────────────────────────────────────── */
         .list-toolbar {
@@ -87,11 +107,7 @@
         }
 
         /* ── Med card ────────────────────────────────────────────────────── */
-        .med-card {
-            border: 1px solid #e5e7eb; border-radius: 8px;
-            padding: 12px; margin-bottom: 8px; background: #fff;
-            transition: opacity 0.15s;
-        }
+        .med-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 8px; background: #fff; }
         .med-card.inactive { opacity: 0.45; }
         .med-card.editing  { border-color: #94a3b8; background: #f8fafc; }
         .med-top { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
@@ -102,7 +118,10 @@
         .med-detail-label { font-size: 11px; color: #9ca3af; }
         .med-note { font-size: 12px; color: #888; font-style: italic; margin-bottom: 6px; }
         .med-btns { display: flex; gap: 4px; flex-wrap: wrap; }
-        .badge-inactive { background: #9ca3af; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; color: #fff; }
+
+        /* ── Inline edit ─────────────────────────────────────────────────── */
+        .inline-edit .form-group { margin-bottom: 8px; }
+        .inline-edit .form-actions { display: flex; gap: 8px; margin-top: 10px; }
 
         /* ── Empty state ─────────────────────────────────────────────────── */
         .empty-state { text-align: center; padding: 40px 16px; color: #9ca3af; font-size: 14px; }
@@ -125,10 +144,10 @@
     </div>
 
     <div class="page-layout">
-        <!-- ── Ľavá zóna: formulár ─────────────────────────────────────── -->
+        <!-- ── Ľavá zóna: formulár (len pridávanie) ───────────────────── -->
         <div class="layout-left">
             <div class="form-panel">
-                <h2 id="formTitle">Pridať liek</h2>
+                <h2>Pridať liek</h2>
 
                 <div class="form-group">
                     <label>Názov <span style="color:#e53e3e">*</span></label>
@@ -152,15 +171,17 @@
 
                 <div class="form-group">
                     <label>Množstvo</label>
-                    <div class="count-picker" id="countPicker">
-                        <button type="button" class="count-btn" data-val="0.25" onclick="selectCount(0.25)">¼</button>
-                        <button type="button" class="count-btn" data-val="0.5"  onclick="selectCount(0.5)">½</button>
-                        <button type="button" class="count-btn" data-val="0.75" onclick="selectCount(0.75)">¾</button>
-                        <button type="button" class="count-btn" data-val="1"    onclick="selectCount(1)">1</button>
-                        <button type="button" class="count-btn" data-val="2"    onclick="selectCount(2)">2</button>
-                        <button type="button" class="count-btn" data-val="3"    onclick="selectCount(3)">3</button>
+                    <div class="count-row">
+                        <div class="count-picker">
+                            <button type="button" class="count-btn" data-val="0.25" onclick="selectCount(this)">¼</button>
+                            <button type="button" class="count-btn" data-val="0.5"  onclick="selectCount(this)">½</button>
+                            <button type="button" class="count-btn" data-val="0.75" onclick="selectCount(this)">¾</button>
+                            <button type="button" class="count-btn" data-val="1"    onclick="selectCount(this)">1</button>
+                            <button type="button" class="count-btn" data-val="2"    onclick="selectCount(this)">2</button>
+                            <button type="button" class="count-btn" data-val="3"    onclick="selectCount(this)">3</button>
+                        </div>
+                        <input type="number" id="f-count" class="count-number" step="0.25" min="0" oninput="syncCountBtns(this)">
                     </div>
-                    <input type="hidden" id="fCount">
                 </div>
 
                 <div class="form-group">
@@ -173,7 +194,7 @@
                     <div class="form-row" style="margin-bottom:0">
                         <div>
                             <input type="time" id="fTimeExact">
-                            <div class="field-hint">presný čas (HH:MM)</div>
+                            <div class="field-hint">presný čas</div>
                         </div>
                         <div>
                             <input type="text" id="fTimeValue" placeholder="ráno, večer…">
@@ -184,11 +205,22 @@
 
                 <div class="form-group">
                     <label>Frekvencia</label>
-                    <select id="fDays">
-                        <option value="kazdy_den">každý deň</option>
-                        <option value="pri_krize">pri kríze</option>
-                        <option value="podla_potreby">podľa potreby</option>
-                    </select>
+                    <div class="days-field" id="f-days-field">
+                        <div class="days-mode-picker">
+                            <button type="button" class="days-mode-btn active" data-mode="kazdy_den" onclick="daysMode(this)">Každý deň</button>
+                            <button type="button" class="days-mode-btn"        data-mode="konkretne" onclick="daysMode(this)">Konkrétne dni</button>
+                            <button type="button" class="days-mode-btn"        data-mode="pri_krize" onclick="daysMode(this)">Pri kríze</button>
+                        </div>
+                        <div class="weekday-picker" style="display:none;margin-top:6px;">
+                            <button type="button" class="weekday-btn" data-day="po"  onclick="toggleWeekday(this)">Po</button>
+                            <button type="button" class="weekday-btn" data-day="ut"  onclick="toggleWeekday(this)">Ut</button>
+                            <button type="button" class="weekday-btn" data-day="str" onclick="toggleWeekday(this)">St</button>
+                            <button type="button" class="weekday-btn" data-day="stv" onclick="toggleWeekday(this)">Št</button>
+                            <button type="button" class="weekday-btn" data-day="pi"  onclick="toggleWeekday(this)">Pi</button>
+                            <button type="button" class="weekday-btn" data-day="so"  onclick="toggleWeekday(this)">So</button>
+                            <button type="button" class="weekday-btn" data-day="ne"  onclick="toggleWeekday(this)">Ne</button>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="form-group">
@@ -197,13 +229,12 @@
                 </div>
 
                 <div class="form-group">
-                    <label>Poradie <span style="color:#bbb;font-size:11px">(nižšie = vyššie v zozname)</span></label>
+                    <label>Poradie <span style="color:#bbb;font-size:11px">(nižšie = vyššie)</span></label>
                     <input type="number" id="fSortOrder" value="0" min="0" style="width:80px">
                 </div>
 
                 <div class="form-actions">
                     <button id="saveBtn" onclick="saveMed()">Uložiť</button>
-                    <button class="btn-ghost" id="cancelBtn" onclick="cancelEdit()" style="display:none">Zrušiť</button>
                 </div>
             </div>
         </div>
@@ -227,36 +258,44 @@
     let showInactive = false;
 
     const KIND_LABELS = { liek: 'liek', vitamin: 'vitamín', doplnok: 'doplnok' };
-    const DAYS_LABELS = { kazdy_den: 'každý deň', pri_krize: 'pri kríze', podla_potreby: 'podľa potreby' };
     const TIME_GROUPS = ['Ráno', 'Poludnie', 'Večer', 'Pri kríze', 'Ostatné'];
-    const COUNT_LABELS = { 0.25: '¼', 0.5: '½', 0.75: '¾' };
+    const COUNT_SYMS  = { 0.25: '¼', 0.5: '½', 0.75: '¾' };
+    const WD_KEYS  = ['po', 'ut', 'str', 'stv', 'pi', 'so', 'ne'];
+    const WD_LABELS = { po: 'Po', ut: 'Ut', str: 'St', stv: 'Št', pi: 'Pi', so: 'So', ne: 'Ne' };
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    function esc(s) {
+        return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
 
     function formatCount(v) {
         if (v == null) return '';
         const n = parseFloat(v);
         if (isNaN(n)) return String(v);
-        if (COUNT_LABELS[n]) return COUNT_LABELS[n];
-        return n === Math.floor(n) ? String(Math.floor(n)) : String(n);
+        return COUNT_SYMS[n] ?? (n === Math.floor(n) ? String(Math.floor(n)) : String(n));
     }
 
-    function selectCount(val) {
-        document.getElementById('fCount').value = val;
-        syncCountBtns(val);
+    function parseDaysToMode(days) {
+        if (!days || days === 'kazdy_den' || days === 'podla_potreby') return 'kazdy_den';
+        if (days === 'pri_krize') return 'pri_krize';
+        if (days.includes(',') || WD_KEYS.includes(days)) return 'konkretne';
+        return 'kazdy_den';
     }
 
-    function syncCountBtns(val) {
-        const target = val != null ? parseFloat(val) : null;
-        document.querySelectorAll('.count-btn').forEach(btn => {
-            btn.classList.toggle('active', target !== null && parseFloat(btn.dataset.val) === target);
-        });
+    function formatDays(days) {
+        if (!days || days === 'kazdy_den') return 'každý deň';
+        if (days === 'pri_krize') return 'pri kríze';
+        if (days === 'podla_potreby') return 'podľa potreby';
+        return days.split(',').map(d => WD_LABELS[d.trim()] ?? d.trim()).join(', ');
     }
 
     function getTimeGroup(m) {
         if (m.days === 'pri_krize') return 'Pri kríze';
         if (m.time_exact) {
             const h = parseInt(m.time_exact.split(':')[0], 10);
-            if (h >= 0  && h < 12) return 'Ráno';
-            if (h >= 12 && h < 15) return 'Poludnie';
+            if (h < 12) return 'Ráno';
+            if (h < 15) return 'Poludnie';
             return 'Večer';
         }
         const tv = (m.time_value || '').toLowerCase();
@@ -267,9 +306,173 @@
         return 'Ostatné';
     }
 
-    function esc(s) {
-        return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    // ── DOM event handlers (scoped via closest) ───────────────────────────────
+
+    function selectCount(btn) {
+        const input = btn.closest('.count-row').querySelector('input[type=number]');
+        input.value = btn.dataset.val;
+        syncCountBtns(input);
     }
+
+    function syncCountBtns(input) {
+        const val = parseFloat(input.value);
+        input.closest('.count-row').querySelectorAll('.count-btn').forEach(b => {
+            b.classList.toggle('active', parseFloat(b.dataset.val) === val);
+        });
+    }
+
+    function daysMode(btn) {
+        const field = btn.closest('.days-field');
+        field.querySelectorAll('.days-mode-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        field.querySelector('.weekday-picker').style.display = btn.dataset.mode === 'konkretne' ? '' : 'none';
+    }
+
+    function toggleWeekday(btn) {
+        btn.classList.toggle('active');
+    }
+
+    function getDaysValue(fieldId) {
+        const field = document.getElementById(fieldId);
+        const mode = field.querySelector('.days-mode-btn.active')?.dataset.mode;
+        if (!mode || mode === 'kazdy_den') return 'kazdy_den';
+        if (mode === 'pri_krize') return 'pri_krize';
+        const selected = [...field.querySelectorAll('.weekday-btn.active')].map(b => b.dataset.day);
+        return selected.length ? selected.join(',') : 'kazdy_den';
+    }
+
+    // ── HTML builders ─────────────────────────────────────────────────────────
+
+    function countRowHtml(countVal, inputId) {
+        const cv = countVal != null ? parseFloat(countVal) : NaN;
+        const COUNTS = [0.25, 0.5, 0.75, 1, 2, 3];
+        const SYMS   = ['¼', '½', '¾', '1', '2', '3'];
+        return `<div class="count-row">
+          <div class="count-picker">${COUNTS.map((v, i) =>
+            `<button type="button" class="count-btn${cv === v ? ' active' : ''}" data-val="${v}" onclick="selectCount(this)">${SYMS[i]}</button>`
+          ).join('')}</div>
+          <input type="number" id="${esc(inputId)}" class="count-number" step="0.25" min="0" value="${!isNaN(cv) ? cv : ''}" oninput="syncCountBtns(this)">
+        </div>`;
+    }
+
+    function daysModeHtml(days, fieldId) {
+        const mode = parseDaysToMode(days);
+        const sel  = mode === 'konkretne' ? days.split(',').map(s => s.trim()) : [];
+        return `<div class="days-field" id="${esc(fieldId)}">
+          <div class="days-mode-picker">
+            <button type="button" class="days-mode-btn${mode==='kazdy_den'?' active':''}" data-mode="kazdy_den" onclick="daysMode(this)">Každý deň</button>
+            <button type="button" class="days-mode-btn${mode==='konkretne'?' active':''}" data-mode="konkretne" onclick="daysMode(this)">Konkrétne dni</button>
+            <button type="button" class="days-mode-btn${mode==='pri_krize'?' active':''}" data-mode="pri_krize" onclick="daysMode(this)">Pri kríze</button>
+          </div>
+          <div class="weekday-picker" style="${mode==='konkretne'?'':'display:none;'}margin-top:6px;">
+            ${WD_KEYS.map(d =>
+              `<button type="button" class="weekday-btn${sel.includes(d)?' active':''}" data-day="${d}" onclick="toggleWeekday(this)">${WD_LABELS[d]}</button>`
+            ).join('')}
+          </div>
+        </div>`;
+    }
+
+    function inlineEditHtml(m) {
+        return `<div class="inline-edit">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Názov</label>
+              <input type="text" id="ie-name" value="${esc(m.name)}">
+            </div>
+            <div class="form-group">
+              <label>Typ</label>
+              <select id="ie-kind">
+                <option value="liek"${m.kind==='liek'?' selected':''}>liek</option>
+                <option value="vitamin"${m.kind==='vitamin'?' selected':''}>vitamín</option>
+                <option value="doplnok"${m.kind==='doplnok'?' selected':''}>doplnok</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Sila / dávka</label>
+              <input type="text" id="ie-dose" value="${esc(m.dose||'')}">
+            </div>
+            <div class="form-group">
+              <label>Jednotka</label>
+              <input type="text" id="ie-unit" value="${esc(m.unit||'')}">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Množstvo</label>
+            ${countRowHtml(m.count, 'ie-count')}
+          </div>
+          <div class="form-row" style="margin-bottom:0">
+            <div class="form-group">
+              <label>Presný čas</label>
+              <input type="time" id="ie-time-exact" value="${esc(m.time_exact||'')}">
+            </div>
+            <div class="form-group">
+              <label>Popis času</label>
+              <input type="text" id="ie-time-value" placeholder="ráno, večer…" value="${esc(m.time_value||'')}">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Frekvencia</label>
+            ${daysModeHtml(m.days||'kazdy_den', 'ie-days-field')}
+          </div>
+          <div class="form-row">
+            <div class="form-group" style="flex:2">
+              <label>Poznámka</label>
+              <input type="text" id="ie-note" value="${esc(m.note||'')}">
+            </div>
+            <div class="form-group" style="flex:0 0 80px">
+              <label>Poradie</label>
+              <input type="number" id="ie-sort-order" min="0" value="${m.sort_order??0}">
+            </div>
+          </div>
+          <div class="form-actions">
+            <button id="ie-save-btn" onclick="saveInlineEdit(${m.id})">Uložiť</button>
+            <button class="btn-ghost" onclick="cancelEdit()">Zrušiť</button>
+          </div>
+        </div>`;
+    }
+
+    function medCardHtml(m) {
+        if (m.id === editingId) {
+            return `<div class="med-card editing" id="med-${m.id}">${inlineEditHtml(m)}</div>`;
+        }
+
+        const inactive = !m.active;
+        const kindBadge = `<span class="badge badge-${esc(m.kind)}">${esc(KIND_LABELS[m.kind]||m.kind)}</span>`;
+        const inactiveBadge = inactive ? `<span class="badge-inactive">neaktívny</span>` : '';
+
+        let detail = '';
+        const cs = formatCount(m.count);
+        if (cs || m.dose || m.unit) {
+            detail += `<span class="med-detail-item"><span class="med-detail-label">dávka:</span> ${esc([cs,m.dose,m.unit].filter(Boolean).join(' '))}</span>`;
+        }
+        let timeStr = '';
+        if (m.time_exact && m.time_value) timeStr = `${m.time_exact} (${m.time_value})`;
+        else if (m.time_exact) timeStr = m.time_exact;
+        else if (m.time_value) timeStr = m.time_value;
+        if (timeStr) detail += `<span class="med-detail-item"><span class="med-detail-label">čas:</span> ${esc(timeStr)}</span>`;
+        detail += `<span class="med-detail-item"><span class="med-detail-label">freq:</span> ${esc(formatDays(m.days))}</span>`;
+
+        const note = m.note ? `<div class="med-note">${esc(m.note)}</div>` : '';
+        const toggleLabel = inactive ? 'Aktivovať' : 'Deaktivovať';
+
+        return `<div class="med-card${inactive?' inactive':''}" id="med-${m.id}">
+          <div class="med-top">
+            <span class="med-name${inactive?' inactive-name':''}">${esc(m.name)}</span>
+            ${kindBadge} ${inactiveBadge}
+          </div>
+          <div class="med-detail">${detail}</div>
+          ${note}
+          <div class="med-btns">
+            <button class="btn-muted" onclick="startEdit(${m.id})">Upraviť</button>
+            <button class="btn-muted" onclick="toggleActive(${m.id},${inactive?1:0})">${esc(toggleLabel)}</button>
+            <button class="btn-danger" onclick="deleteMed(${m.id})">Zmazať</button>
+          </div>
+        </div>`;
+    }
+
+    // ── App logic ─────────────────────────────────────────────────────────────
 
     async function loadMeds() {
         const resp = await fetch('/medications?include_inactive=true');
@@ -289,11 +492,11 @@
 
         const groups = {};
         TIME_GROUPS.forEach(g => groups[g] = []);
-        visible.forEach(m => { (groups[getTimeGroup(m)] = groups[getTimeGroup(m)] || []).push(m); });
+        visible.forEach(m => { const g = getTimeGroup(m); (groups[g] = groups[g]||[]).push(m); });
 
         let html = '';
         TIME_GROUPS.forEach(grp => {
-            if (!groups[grp] || !groups[grp].length) return;
+            if (!groups[grp]?.length) return;
             html += `<div class="time-group"><div class="time-group-header">${esc(grp)}</div>`;
             groups[grp].forEach(m => { html += medCardHtml(m); });
             html += `</div>`;
@@ -301,95 +504,63 @@
         list.innerHTML = html;
     }
 
-    function medCardHtml(m) {
-        const inactive = !m.active;
-        const isEditing = m.id === editingId;
-        const kindBadge = `<span class="badge badge-${esc(m.kind)}">${esc(KIND_LABELS[m.kind] || m.kind)}</span>`;
-        const inactiveBadge = inactive ? `<span class="badge-inactive">neaktívny</span>` : '';
-
-        let detail = '';
-        const countStr = formatCount(m.count);
-        if (countStr || m.dose || m.unit) {
-            const parts = [countStr, m.dose, m.unit].filter(Boolean).join(' ');
-            detail += `<span class="med-detail-item"><span class="med-detail-label">dávka:</span> ${esc(parts)}</span>`;
-        }
-
-        let timeStr = '';
-        if (m.time_exact && m.time_value) timeStr = `${m.time_exact} (${m.time_value})`;
-        else if (m.time_exact) timeStr = m.time_exact;
-        else if (m.time_value) timeStr = m.time_value;
-        if (timeStr) {
-            detail += `<span class="med-detail-item"><span class="med-detail-label">čas:</span> ${esc(timeStr)}</span>`;
-        }
-        detail += `<span class="med-detail-item"><span class="med-detail-label">freq:</span> ${esc(DAYS_LABELS[m.days] || m.days)}</span>`;
-
-        const note = m.note ? `<div class="med-note">${esc(m.note)}</div>` : '';
-        const toggleLabel = inactive ? 'Aktivovať' : 'Deaktivovať';
-
-        return `<div class="med-card${inactive ? ' inactive' : ''}${isEditing ? ' editing' : ''}" id="med-${m.id}">
-            <div class="med-top">
-                <span class="med-name${inactive ? ' inactive-name' : ''}">${esc(m.name)}</span>
-                ${kindBadge} ${inactiveBadge}
-            </div>
-            <div class="med-detail">${detail}</div>
-            ${note}
-            <div class="med-btns">
-                <button class="btn-muted" onclick="startEdit(${m.id})">Upraviť</button>
-                <button class="btn-muted" onclick="toggleActive(${m.id}, ${inactive ? 1 : 0})">${esc(toggleLabel)}</button>
-                <button class="btn-danger" onclick="deleteMed(${m.id})">Zmazať</button>
-            </div>
-        </div>`;
-    }
-
     function startEdit(id) {
-        const m = meds.find(x => x.id === id);
-        if (!m) return;
+        if (editingId === id) return;
         editingId = id;
-
-        document.getElementById('fName').value       = m.name || '';
-        document.getElementById('fKind').value       = m.kind || 'liek';
-        document.getElementById('fDose').value       = m.dose || '';
-        document.getElementById('fUnit').value       = m.unit || '';
-        document.getElementById('fTimeExact').value  = m.time_exact || '';
-        document.getElementById('fTimeValue').value  = m.time_value || '';
-        document.getElementById('fDays').value       = m.days || 'kazdy_den';
-        document.getElementById('fNote').value       = m.note || '';
-        document.getElementById('fSortOrder').value  = m.sort_order ?? 0;
-        document.getElementById('fCount').value      = m.count != null ? m.count : '';
-        syncCountBtns(m.count);
-
-        document.getElementById('formTitle').textContent = 'Upraviť liek';
-        document.getElementById('cancelBtn').style.display = '';
-        document.getElementById('fName').focus();
         renderMeds();
-
-        document.querySelector('.form-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        document.getElementById('med-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        document.getElementById('ie-name')?.focus();
     }
 
     function cancelEdit() {
         editingId = null;
-        document.getElementById('formTitle').textContent = 'Pridať liek';
-        document.getElementById('cancelBtn').style.display = 'none';
-        document.getElementById('fName').value      = '';
-        document.getElementById('fKind').value      = 'liek';
-        document.getElementById('fDose').value      = '';
-        document.getElementById('fUnit').value      = '';
-        document.getElementById('fTimeExact').value = '';
-        document.getElementById('fTimeValue').value = '';
-        document.getElementById('fDays').value      = 'kazdy_den';
-        document.getElementById('fNote').value      = '';
-        document.getElementById('fSortOrder').value = '0';
-        document.getElementById('fCount').value     = '';
-        syncCountBtns(null);
         renderMeds();
+    }
+
+    async function saveInlineEdit(id) {
+        const name = document.getElementById('ie-name').value.trim();
+        if (!name) { alert('Zadaj názov lieku'); document.getElementById('ie-name').focus(); return; }
+
+        const cv = document.getElementById('ie-count').value;
+        const countVal = cv !== '' ? parseFloat(cv) : null;
+
+        const body = {
+            name,
+            kind:       document.getElementById('ie-kind').value,
+            count:      (countVal != null && !isNaN(countVal)) ? countVal : null,
+            dose:       document.getElementById('ie-dose').value.trim() || null,
+            unit:       document.getElementById('ie-unit').value.trim() || null,
+            time_exact: document.getElementById('ie-time-exact').value || null,
+            time_value: document.getElementById('ie-time-value').value.trim() || null,
+            days:       getDaysValue('ie-days-field'),
+            note:       document.getElementById('ie-note').value.trim() || null,
+            sort_order: parseInt(document.getElementById('ie-sort-order').value) || 0,
+        };
+
+        const btn = document.getElementById('ie-save-btn');
+        if (btn) btn.disabled = true;
+        try {
+            const resp = await fetch(`/medications/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            if (resp.status === 401) { location.href = '/login'; return; }
+            if (!resp.ok) throw new Error(await resp.text());
+            editingId = null;
+            await loadMeds();
+        } catch(e) {
+            alert('Chyba: ' + e.message);
+            if (btn) btn.disabled = false;
+        }
     }
 
     async function saveMed() {
         const name = document.getElementById('fName').value.trim();
         if (!name) { alert('Zadaj názov lieku'); document.getElementById('fName').focus(); return; }
 
-        const countRaw = document.getElementById('fCount').value;
-        const countVal = countRaw !== '' ? parseFloat(countRaw) : null;
+        const cv = document.getElementById('f-count').value;
+        const countVal = cv !== '' ? parseFloat(cv) : null;
 
         const body = {
             name,
@@ -399,7 +570,7 @@
             unit:       document.getElementById('fUnit').value.trim() || null,
             time_exact: document.getElementById('fTimeExact').value || null,
             time_value: document.getElementById('fTimeValue').value.trim() || null,
-            days:       document.getElementById('fDays').value,
+            days:       getDaysValue('f-days-field'),
             note:       document.getElementById('fNote').value.trim() || null,
             sort_order: parseInt(document.getElementById('fSortOrder').value) || 0,
         };
@@ -407,15 +578,14 @@
         const btn = document.getElementById('saveBtn');
         btn.disabled = true;
         try {
-            const url    = editingId ? `/medications/${editingId}` : '/medications';
-            const method = editingId ? 'PUT' : 'POST';
-            const resp = await fetch(url, {
-                method, headers: { 'Content-Type': 'application/json' },
+            const resp = await fetch('/medications', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
             });
             if (resp.status === 401) { location.href = '/login'; return; }
             if (!resp.ok) throw new Error(await resp.text());
-            cancelEdit();
+            resetAddForm();
             await loadMeds();
         } catch(e) {
             alert('Chyba: ' + e.message);
@@ -424,12 +594,30 @@
         }
     }
 
+    function resetAddForm() {
+        document.getElementById('fName').value = '';
+        document.getElementById('fKind').value = 'liek';
+        const fCountInput = document.getElementById('f-count');
+        fCountInput.value = '';
+        fCountInput.closest('.count-row').querySelectorAll('.count-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById('fDose').value = '';
+        document.getElementById('fUnit').value = '';
+        document.getElementById('fTimeExact').value = '';
+        document.getElementById('fTimeValue').value = '';
+        const df = document.getElementById('f-days-field');
+        df.querySelectorAll('.days-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === 'kazdy_den'));
+        df.querySelector('.weekday-picker').style.display = 'none';
+        df.querySelectorAll('.weekday-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById('fNote').value = '';
+        document.getElementById('fSortOrder').value = '0';
+    }
+
     async function deleteMed(id) {
         const m = meds.find(x => x.id === id);
         if (!confirm(`Zmazať liek "${m?.name}"? Táto akcia je nevratná.`)) return;
         const resp = await fetch(`/medications/${id}`, { method: 'DELETE' });
         if (resp.ok || resp.status === 204) {
-            if (editingId === id) cancelEdit();
+            if (editingId === id) editingId = null;
             await loadMeds();
         }
     }
@@ -447,10 +635,11 @@
     }
 
     document.addEventListener('keydown', e => {
-        if (e.key === 'Enter' && e.target.tagName === 'INPUT' &&
-            document.activeElement.closest('.form-panel')) {
-            saveMed();
+        if (e.key === 'Enter' && e.target.tagName === 'INPUT') {
+            if (document.activeElement.closest('.inline-edit')) { saveInlineEdit(editingId); }
+            else if (document.activeElement.closest('.form-panel')) { saveMed(); }
         }
+        if (e.key === 'Escape' && editingId !== null) { cancelEdit(); }
     });
 
     loadMeds();
