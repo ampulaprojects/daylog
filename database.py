@@ -54,6 +54,25 @@ def init_db():
             created_at TEXT NOT NULL
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS med_schedule (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            kind TEXT NOT NULL DEFAULT 'liek',
+            count REAL,
+            dose TEXT,
+            unit TEXT,
+            time_type TEXT,
+            time_exact TEXT,
+            time_value TEXT,
+            days TEXT DEFAULT 'kazdy_den',
+            note TEXT,
+            active INTEGER DEFAULT 1,
+            sort_order INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -304,5 +323,68 @@ def replace_entry_events(entry_id: int, user_id: int, events: list):
 def delete_event(event_id):
     conn = get_db()
     conn.execute("DELETE FROM events WHERE id = ?", (event_id,))
+    conn.commit()
+    conn.close()
+
+
+# ── Medications ────────────────────────────────────────────────────────────
+
+def get_medications(include_inactive=False):
+    conn = get_db()
+    q = "SELECT * FROM med_schedule"
+    if not include_inactive:
+        q += " WHERE active = 1"
+    q += " ORDER BY sort_order, time_value, name"
+    rows = conn.execute(q).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def create_medication(name, kind="liek", count=None, dose=None, unit=None,
+                      time_type=None, time_exact=None, time_value=None,
+                      days="kazdy_den", note=None, sort_order=0):
+    conn = get_db()
+    now = datetime.utcnow().isoformat()
+    cur = conn.execute(
+        """INSERT INTO med_schedule
+           (name, kind, count, dose, unit, time_type, time_exact, time_value, days, note,
+            active, sort_order, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?)""",
+        (name, kind, count, dose, unit, time_type, time_exact, time_value, days, note,
+         sort_order, now, now)
+    )
+    conn.commit()
+    med_id = cur.lastrowid
+    conn.close()
+    return med_id
+
+
+def update_medication(med_id, name, kind, count, dose, unit, time_type,
+                      time_exact, time_value, days, note, sort_order):
+    conn = get_db()
+    now = datetime.utcnow().isoformat()
+    conn.execute(
+        """UPDATE med_schedule SET name=?, kind=?, count=?, dose=?, unit=?,
+           time_type=?, time_exact=?, time_value=?, days=?, note=?,
+           sort_order=?, updated_at=? WHERE id=?""",
+        (name, kind, count, dose, unit, time_type, time_exact, time_value,
+         days, note, sort_order, now, med_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def delete_medication(med_id):
+    conn = get_db()
+    conn.execute("DELETE FROM med_schedule WHERE id=?", (med_id,))
+    conn.commit()
+    conn.close()
+
+
+def set_medication_active(med_id, active):
+    conn = get_db()
+    now = datetime.utcnow().isoformat()
+    conn.execute("UPDATE med_schedule SET active=?, updated_at=? WHERE id=?",
+                 (int(active), now, med_id))
     conn.commit()
     conn.close()

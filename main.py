@@ -11,7 +11,9 @@ from database import (
     init_db, create_user, get_user_by_username, get_user_by_id,
     set_user_role, update_user_password,
     create_entry, get_entries, get_entry, create_event,
-    delete_entry, update_entry_text, replace_entry_events
+    delete_entry, update_entry_text, replace_entry_events,
+    get_medications, create_medication, update_medication,
+    delete_medication, set_medication_active
 )
 from auth import verify_password, create_session_token, decode_session_token
 from llm import extract_events, transcribe_photo
@@ -72,6 +74,13 @@ def profile_page(session: Optional[str] = Cookie(None)):
     if not (decode_session_token(session) if session else None):
         return RedirectResponse(url="/login", status_code=302)
     return FileResponse("static/profile.html")
+
+
+@app.get("/meds")
+def meds_page(session: Optional[str] = Cookie(None)):
+    if not (decode_session_token(session) if session else None):
+        return RedirectResponse(url="/login", status_code=302)
+    return FileResponse("static/meds.html")
 
 
 # ── Auth endpoints ────────────────────────────────────────────────────────────
@@ -263,6 +272,60 @@ def get_photo(filename: str, user=Depends(require_auth)):
     if not path.is_file():
         raise HTTPException(status_code=404, detail="Súbor nenájdený")
     return FileResponse(path, media_type="image/jpeg")
+
+
+# ── Medications ──────────────────────────────────────────────────────────────
+
+class MedBody(BaseModel):
+    name: str
+    kind: str = "liek"
+    count: Optional[float] = None
+    dose: Optional[str] = None
+    unit: Optional[str] = None
+    time_type: Optional[str] = None
+    time_exact: Optional[str] = None
+    time_value: Optional[str] = None
+    days: str = "kazdy_den"
+    note: Optional[str] = None
+    sort_order: int = 0
+
+
+@app.get("/medications")
+def list_medications(include_inactive: bool = False, user=Depends(require_auth)):
+    return get_medications(include_inactive=include_inactive)
+
+
+@app.post("/medications", status_code=201)
+def add_medication(body: MedBody, user=Depends(require_auth)):
+    med_id = create_medication(
+        name=body.name, kind=body.kind, count=body.count, dose=body.dose,
+        unit=body.unit, time_type=body.time_type, time_exact=body.time_exact,
+        time_value=body.time_value, days=body.days, note=body.note,
+        sort_order=body.sort_order
+    )
+    return {"id": med_id}
+
+
+@app.put("/medications/{med_id}")
+def edit_medication(med_id: int, body: MedBody, user=Depends(require_auth)):
+    update_medication(
+        med_id=med_id, name=body.name, kind=body.kind, count=body.count,
+        dose=body.dose, unit=body.unit, time_type=body.time_type,
+        time_exact=body.time_exact, time_value=body.time_value,
+        days=body.days, note=body.note, sort_order=body.sort_order
+    )
+    return {"id": med_id}
+
+
+@app.delete("/medications/{med_id}", status_code=204)
+def remove_medication(med_id: int, user=Depends(require_auth)):
+    delete_medication(med_id)
+
+
+@app.patch("/medications/{med_id}/active")
+def toggle_med_active(med_id: int, active: bool, user=Depends(require_auth)):
+    set_medication_active(med_id, active)
+    return {"id": med_id, "active": active}
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")

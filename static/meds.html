@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>daylog — Lieky</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, sans-serif; margin: 0; }
+        h1 { font-size: 20px; }
+        h2 { font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+        input[type=text], input[type=time], input[type=number], select, textarea {
+            width: 100%; padding: 8px; font-size: 14px;
+            border: 1px solid #ccc; border-radius: 6px; font-family: inherit;
+        }
+        input[type=text]:focus, input[type=time]:focus, input[type=number]:focus,
+        select:focus, textarea:focus {
+            outline: none; border-color: #6b7280;
+        }
+        button { padding: 8px 16px; background: #000; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
+        button:hover { opacity: 0.8; }
+        button:disabled { opacity: 0.45; cursor: default; }
+        .btn-ghost { background: #eee; color: #333; }
+        .btn-sm { padding: 4px 10px; font-size: 12px; }
+        .btn-danger { background: none; color: #d1d5db; border: 1px solid #e5e7eb; border-radius: 4px; font-size: 11px; padding: 2px 7px; cursor: pointer; }
+        .btn-danger:hover { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
+        .btn-muted { background: none; color: #aaa; border: 1px solid #e5e7eb; border-radius: 4px; font-size: 11px; padding: 2px 7px; cursor: pointer; }
+        .btn-muted:hover { background: #f5f5f5; color: #333; border-color: #ccc; }
+        .section { margin-bottom: 24px; }
+        .form-group { margin-bottom: 10px; }
+        .form-row { display: flex; gap: 8px; }
+        .form-row > * { flex: 1; min-width: 0; }
+        label { font-size: 13px; color: #555; display: block; margin-bottom: 4px; }
+
+        /* ── Count picker ────────────────────────────────────────────────── */
+        .count-picker { display: flex; gap: 4px; flex-wrap: wrap; }
+        .count-btn {
+            padding: 6px 0; font-size: 15px; background: #f3f4f6;
+            color: #374151; border: 1px solid #e5e7eb; border-radius: 6px;
+            cursor: pointer; min-width: 38px; text-align: center;
+        }
+        .count-btn:hover { background: #e5e7eb; }
+        .count-btn.active { background: #111; color: #fff; border-color: #111; }
+
+        /* ── Badges ─────────────────────────────────────────────────────── */
+        .badge { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; color: #fff; white-space: nowrap; }
+        .badge-liek    { background: #2563eb; }
+        .badge-vitamin { background: #16a34a; }
+        .badge-doplnok { background: #d97706; }
+
+        /* ── Page layout ─────────────────────────────────────────────────── */
+        .page-wrap { max-width: 1300px; margin: 0 auto; padding: 16px; }
+        .page-header { margin-bottom: 16px; }
+        .page-layout { display: flex; flex-direction: column; }
+        .layout-left, .layout-right { min-width: 0; }
+
+        @media (min-width: 900px) {
+            .page-layout {
+                display: grid;
+                grid-template-columns: 360px 1fr;
+                column-gap: 32px;
+                align-items: start;
+            }
+            .layout-left { position: sticky; top: 16px; }
+        }
+
+        /* ── Form panel ──────────────────────────────────────────────────── */
+        .form-panel {
+            border: 1px solid #e5e7eb; border-radius: 8px;
+            padding: 16px; background: #fafafa;
+        }
+        .form-panel h2 { margin-bottom: 14px; }
+        .form-actions { display: flex; gap: 8px; margin-top: 14px; }
+        .field-hint { font-size: 11px; color: #9ca3af; margin-top: 3px; }
+
+        /* ── Med list ────────────────────────────────────────────────────── */
+        .list-toolbar {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 12px; flex-wrap: wrap; gap: 8px;
+        }
+        .list-title { font-size: 15px; font-weight: 600; color: #374151; }
+        .time-group { margin-bottom: 20px; }
+        .time-group-header {
+            font-size: 13px; font-weight: 600; color: #6b7280;
+            padding: 4px 0; border-bottom: 1px solid #e5e7eb; margin-bottom: 8px;
+            text-transform: uppercase; letter-spacing: 0.05em;
+        }
+
+        /* ── Med card ────────────────────────────────────────────────────── */
+        .med-card {
+            border: 1px solid #e5e7eb; border-radius: 8px;
+            padding: 12px; margin-bottom: 8px; background: #fff;
+            transition: opacity 0.15s;
+        }
+        .med-card.inactive { opacity: 0.45; }
+        .med-card.editing  { border-color: #94a3b8; background: #f8fafc; }
+        .med-top { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 6px; }
+        .med-name { font-size: 15px; font-weight: 600; color: #111; flex: 1; }
+        .med-name.inactive-name { text-decoration: line-through; color: #9ca3af; }
+        .med-detail { font-size: 13px; color: #555; display: flex; flex-wrap: wrap; gap: 6px 12px; margin-bottom: 6px; }
+        .med-detail-item { display: flex; align-items: center; gap: 4px; }
+        .med-detail-label { font-size: 11px; color: #9ca3af; }
+        .med-note { font-size: 12px; color: #888; font-style: italic; margin-bottom: 6px; }
+        .med-btns { display: flex; gap: 4px; flex-wrap: wrap; }
+        .badge-inactive { background: #9ca3af; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; color: #fff; }
+
+        /* ── Empty state ─────────────────────────────────────────────────── */
+        .empty-state { text-align: center; padding: 40px 16px; color: #9ca3af; font-size: 14px; }
+    </style>
+</head>
+<body>
+<div class="page-wrap">
+    <div class="page-header">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+            <h1>daylog</h1>
+            <div style="display:flex;gap:10px;align-items:center">
+                <a href="/" style="font-size:13px;color:#888;text-decoration:none">Záznamy</a>
+                <a href="/meds" style="font-size:13px;color:#111;font-weight:600;text-decoration:none">Lieky</a>
+                <a href="/profile" style="font-size:13px;color:#888;text-decoration:none">Profil</a>
+                <form method="POST" action="/logout">
+                    <button type="submit" class="btn-ghost" style="padding:6px 12px;font-size:13px">Odhlásiť</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="page-layout">
+        <!-- ── Ľavá zóna: formulár ─────────────────────────────────────── -->
+        <div class="layout-left">
+            <div class="form-panel">
+                <h2 id="formTitle">Pridať liek</h2>
+
+                <div class="form-group">
+                    <label>Názov <span style="color:#e53e3e">*</span></label>
+                    <input type="text" id="fName" placeholder="napr. Orfiril">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Typ</label>
+                        <select id="fKind">
+                            <option value="liek">liek</option>
+                            <option value="vitamin">vitamín</option>
+                            <option value="doplnok">doplnok</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Sila / dávka</label>
+                        <input type="text" id="fDose" placeholder="napr. 300mg">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Množstvo</label>
+                    <div class="count-picker" id="countPicker">
+                        <button type="button" class="count-btn" data-val="0.25" onclick="selectCount(0.25)">¼</button>
+                        <button type="button" class="count-btn" data-val="0.5"  onclick="selectCount(0.5)">½</button>
+                        <button type="button" class="count-btn" data-val="0.75" onclick="selectCount(0.75)">¾</button>
+                        <button type="button" class="count-btn" data-val="1"    onclick="selectCount(1)">1</button>
+                        <button type="button" class="count-btn" data-val="2"    onclick="selectCount(2)">2</button>
+                        <button type="button" class="count-btn" data-val="3"    onclick="selectCount(3)">3</button>
+                    </div>
+                    <input type="hidden" id="fCount">
+                </div>
+
+                <div class="form-group">
+                    <label>Jednotka</label>
+                    <input type="text" id="fUnit" placeholder="tableta, kvapka, ml...">
+                </div>
+
+                <div class="form-group">
+                    <label>Čas podania</label>
+                    <div class="form-row" style="margin-bottom:0">
+                        <div>
+                            <input type="time" id="fTimeExact">
+                            <div class="field-hint">presný čas (HH:MM)</div>
+                        </div>
+                        <div>
+                            <input type="text" id="fTimeValue" placeholder="ráno, večer…">
+                            <div class="field-hint">slovný popis</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Frekvencia</label>
+                    <select id="fDays">
+                        <option value="kazdy_den">každý deň</option>
+                        <option value="pri_krize">pri kríze</option>
+                        <option value="podla_potreby">podľa potreby</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label>Poznámka</label>
+                    <input type="text" id="fNote" placeholder="napr. obsesívne stavy, pred jedlom...">
+                </div>
+
+                <div class="form-group">
+                    <label>Poradie <span style="color:#bbb;font-size:11px">(nižšie = vyššie v zozname)</span></label>
+                    <input type="number" id="fSortOrder" value="0" min="0" style="width:80px">
+                </div>
+
+                <div class="form-actions">
+                    <button id="saveBtn" onclick="saveMed()">Uložiť</button>
+                    <button class="btn-ghost" id="cancelBtn" onclick="cancelEdit()" style="display:none">Zrušiť</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Pravá zóna: zoznam ──────────────────────────────────────── -->
+        <div class="layout-right">
+            <div class="section">
+                <div class="list-toolbar">
+                    <span class="list-title">Zoznam liekov</span>
+                    <button class="btn-ghost btn-sm" id="toggleInactiveBtn" onclick="toggleShowInactive()">Zobraziť neaktívne</button>
+                </div>
+                <div id="medList"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let meds = [];
+    let editingId = null;
+    let showInactive = false;
+
+    const KIND_LABELS = { liek: 'liek', vitamin: 'vitamín', doplnok: 'doplnok' };
+    const DAYS_LABELS = { kazdy_den: 'každý deň', pri_krize: 'pri kríze', podla_potreby: 'podľa potreby' };
+    const TIME_GROUPS = ['Ráno', 'Poludnie', 'Večer', 'Pri kríze', 'Ostatné'];
+    const COUNT_LABELS = { 0.25: '¼', 0.5: '½', 0.75: '¾' };
+
+    function formatCount(v) {
+        if (v == null) return '';
+        const n = parseFloat(v);
+        if (isNaN(n)) return String(v);
+        if (COUNT_LABELS[n]) return COUNT_LABELS[n];
+        return n === Math.floor(n) ? String(Math.floor(n)) : String(n);
+    }
+
+    function selectCount(val) {
+        document.getElementById('fCount').value = val;
+        syncCountBtns(val);
+    }
+
+    function syncCountBtns(val) {
+        const target = val != null ? parseFloat(val) : null;
+        document.querySelectorAll('.count-btn').forEach(btn => {
+            btn.classList.toggle('active', target !== null && parseFloat(btn.dataset.val) === target);
+        });
+    }
+
+    function getTimeGroup(m) {
+        if (m.days === 'pri_krize') return 'Pri kríze';
+        if (m.time_exact) {
+            const h = parseInt(m.time_exact.split(':')[0], 10);
+            if (h >= 0  && h < 12) return 'Ráno';
+            if (h >= 12 && h < 15) return 'Poludnie';
+            return 'Večer';
+        }
+        const tv = (m.time_value || '').toLowerCase();
+        if (!tv) return 'Ostatné';
+        if (/^0[0-9]:|^1[01]:|ráno|raňajk|vstávan/.test(tv)) return 'Ráno';
+        if (/^1[2-4]:|poludnie|obed/.test(tv)) return 'Poludnie';
+        if (/^1[5-9]:|^2[0-3]:|večer|noc|pred span|pred spánk/.test(tv)) return 'Večer';
+        return 'Ostatné';
+    }
+
+    function esc(s) {
+        return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    async function loadMeds() {
+        const resp = await fetch('/medications?include_inactive=true');
+        if (resp.status === 401) { location.href = '/login'; return; }
+        meds = await resp.json();
+        renderMeds();
+    }
+
+    function renderMeds() {
+        const list = document.getElementById('medList');
+        const visible = showInactive ? meds : meds.filter(m => m.active);
+
+        if (!visible.length) {
+            list.innerHTML = '<div class="empty-state">Žiadne lieky.<br>Pridaj prvý liek formulárom vľavo.</div>';
+            return;
+        }
+
+        const groups = {};
+        TIME_GROUPS.forEach(g => groups[g] = []);
+        visible.forEach(m => { (groups[getTimeGroup(m)] = groups[getTimeGroup(m)] || []).push(m); });
+
+        let html = '';
+        TIME_GROUPS.forEach(grp => {
+            if (!groups[grp] || !groups[grp].length) return;
+            html += `<div class="time-group"><div class="time-group-header">${esc(grp)}</div>`;
+            groups[grp].forEach(m => { html += medCardHtml(m); });
+            html += `</div>`;
+        });
+        list.innerHTML = html;
+    }
+
+    function medCardHtml(m) {
+        const inactive = !m.active;
+        const isEditing = m.id === editingId;
+        const kindBadge = `<span class="badge badge-${esc(m.kind)}">${esc(KIND_LABELS[m.kind] || m.kind)}</span>`;
+        const inactiveBadge = inactive ? `<span class="badge-inactive">neaktívny</span>` : '';
+
+        let detail = '';
+        const countStr = formatCount(m.count);
+        if (countStr || m.dose || m.unit) {
+            const parts = [countStr, m.dose, m.unit].filter(Boolean).join(' ');
+            detail += `<span class="med-detail-item"><span class="med-detail-label">dávka:</span> ${esc(parts)}</span>`;
+        }
+
+        let timeStr = '';
+        if (m.time_exact && m.time_value) timeStr = `${m.time_exact} (${m.time_value})`;
+        else if (m.time_exact) timeStr = m.time_exact;
+        else if (m.time_value) timeStr = m.time_value;
+        if (timeStr) {
+            detail += `<span class="med-detail-item"><span class="med-detail-label">čas:</span> ${esc(timeStr)}</span>`;
+        }
+        detail += `<span class="med-detail-item"><span class="med-detail-label">freq:</span> ${esc(DAYS_LABELS[m.days] || m.days)}</span>`;
+
+        const note = m.note ? `<div class="med-note">${esc(m.note)}</div>` : '';
+        const toggleLabel = inactive ? 'Aktivovať' : 'Deaktivovať';
+
+        return `<div class="med-card${inactive ? ' inactive' : ''}${isEditing ? ' editing' : ''}" id="med-${m.id}">
+            <div class="med-top">
+                <span class="med-name${inactive ? ' inactive-name' : ''}">${esc(m.name)}</span>
+                ${kindBadge} ${inactiveBadge}
+            </div>
+            <div class="med-detail">${detail}</div>
+            ${note}
+            <div class="med-btns">
+                <button class="btn-muted" onclick="startEdit(${m.id})">Upraviť</button>
+                <button class="btn-muted" onclick="toggleActive(${m.id}, ${inactive ? 1 : 0})">${esc(toggleLabel)}</button>
+                <button class="btn-danger" onclick="deleteMed(${m.id})">Zmazať</button>
+            </div>
+        </div>`;
+    }
+
+    function startEdit(id) {
+        const m = meds.find(x => x.id === id);
+        if (!m) return;
+        editingId = id;
+
+        document.getElementById('fName').value       = m.name || '';
+        document.getElementById('fKind').value       = m.kind || 'liek';
+        document.getElementById('fDose').value       = m.dose || '';
+        document.getElementById('fUnit').value       = m.unit || '';
+        document.getElementById('fTimeExact').value  = m.time_exact || '';
+        document.getElementById('fTimeValue').value  = m.time_value || '';
+        document.getElementById('fDays').value       = m.days || 'kazdy_den';
+        document.getElementById('fNote').value       = m.note || '';
+        document.getElementById('fSortOrder').value  = m.sort_order ?? 0;
+        document.getElementById('fCount').value      = m.count != null ? m.count : '';
+        syncCountBtns(m.count);
+
+        document.getElementById('formTitle').textContent = 'Upraviť liek';
+        document.getElementById('cancelBtn').style.display = '';
+        document.getElementById('fName').focus();
+        renderMeds();
+
+        document.querySelector('.form-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function cancelEdit() {
+        editingId = null;
+        document.getElementById('formTitle').textContent = 'Pridať liek';
+        document.getElementById('cancelBtn').style.display = 'none';
+        document.getElementById('fName').value      = '';
+        document.getElementById('fKind').value      = 'liek';
+        document.getElementById('fDose').value      = '';
+        document.getElementById('fUnit').value      = '';
+        document.getElementById('fTimeExact').value = '';
+        document.getElementById('fTimeValue').value = '';
+        document.getElementById('fDays').value      = 'kazdy_den';
+        document.getElementById('fNote').value      = '';
+        document.getElementById('fSortOrder').value = '0';
+        document.getElementById('fCount').value     = '';
+        syncCountBtns(null);
+        renderMeds();
+    }
+
+    async function saveMed() {
+        const name = document.getElementById('fName').value.trim();
+        if (!name) { alert('Zadaj názov lieku'); document.getElementById('fName').focus(); return; }
+
+        const countRaw = document.getElementById('fCount').value;
+        const countVal = countRaw !== '' ? parseFloat(countRaw) : null;
+
+        const body = {
+            name,
+            kind:       document.getElementById('fKind').value,
+            count:      (countVal != null && !isNaN(countVal)) ? countVal : null,
+            dose:       document.getElementById('fDose').value.trim() || null,
+            unit:       document.getElementById('fUnit').value.trim() || null,
+            time_exact: document.getElementById('fTimeExact').value || null,
+            time_value: document.getElementById('fTimeValue').value.trim() || null,
+            days:       document.getElementById('fDays').value,
+            note:       document.getElementById('fNote').value.trim() || null,
+            sort_order: parseInt(document.getElementById('fSortOrder').value) || 0,
+        };
+
+        const btn = document.getElementById('saveBtn');
+        btn.disabled = true;
+        try {
+            const url    = editingId ? `/medications/${editingId}` : '/medications';
+            const method = editingId ? 'PUT' : 'POST';
+            const resp = await fetch(url, {
+                method, headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            if (resp.status === 401) { location.href = '/login'; return; }
+            if (!resp.ok) throw new Error(await resp.text());
+            cancelEdit();
+            await loadMeds();
+        } catch(e) {
+            alert('Chyba: ' + e.message);
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    async function deleteMed(id) {
+        const m = meds.find(x => x.id === id);
+        if (!confirm(`Zmazať liek "${m?.name}"? Táto akcia je nevratná.`)) return;
+        const resp = await fetch(`/medications/${id}`, { method: 'DELETE' });
+        if (resp.ok || resp.status === 204) {
+            if (editingId === id) cancelEdit();
+            await loadMeds();
+        }
+    }
+
+    async function toggleActive(id, active) {
+        const resp = await fetch(`/medications/${id}/active?active=${active === 1}`, { method: 'PATCH' });
+        if (resp.ok) await loadMeds();
+    }
+
+    function toggleShowInactive() {
+        showInactive = !showInactive;
+        document.getElementById('toggleInactiveBtn').textContent =
+            showInactive ? 'Skryť neaktívne' : 'Zobraziť neaktívne';
+        renderMeds();
+    }
+
+    document.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && e.target.tagName === 'INPUT' &&
+            document.activeElement.closest('.form-panel')) {
+            saveMed();
+        }
+    });
+
+    loadMeds();
+</script>
+</body>
+</html>
