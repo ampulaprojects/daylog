@@ -297,9 +297,15 @@ def delete_entry(entry_id: int):
     conn.close()
 
 
-def update_entry_text(entry_id: int, text: str):
+def update_entry_text(entry_id: int, text: str, entry_date: str = None, entry_time: str = None):
     conn = get_db()
-    conn.execute("UPDATE entries SET text = ? WHERE id = ?", (text, entry_id))
+    if entry_date is not None:
+        conn.execute(
+            "UPDATE entries SET text=?, entry_date=?, entry_time=? WHERE id=?",
+            (text, entry_date, entry_time or None, entry_id)
+        )
+    else:
+        conn.execute("UPDATE entries SET text=? WHERE id=?", (text, entry_id))
     conn.commit()
     conn.close()
 

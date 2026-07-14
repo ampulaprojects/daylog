@@ -214,6 +214,8 @@ def entries_confirm(body: ConfirmRequest, user=Depends(require_auth)):
 class EntryUpdate(BaseModel):
     text: str
     events: List[EventItem]
+    entry_date: Optional[str] = None
+    entry_time: Optional[str] = None
 
 
 @app.delete("/entries/{entry_id}", status_code=204)
@@ -223,7 +225,7 @@ def delete_entry_endpoint(entry_id: int, user=Depends(require_auth)):
 
 @app.put("/entries/{entry_id}")
 def update_entry_endpoint(entry_id: int, body: EntryUpdate, user=Depends(require_auth)):
-    update_entry_text(entry_id, body.text)
+    update_entry_text(entry_id, body.text, body.entry_date, body.entry_time)
     events_data = [{"event_time": e.event_time, "event_type": e.event_type,
                     "value": e.value, "note": e.note} for e in body.events]
     replace_entry_events(entry_id, user["id"], events_data)

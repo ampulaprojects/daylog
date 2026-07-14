@@ -125,6 +125,10 @@
         .del-btn:hover { background: #fee2e2; color: #dc2626; }
         .review-actions { display: flex; gap: 8px; margin-top: 12px; }
         .entry-editing { background: #f8fafc; border-color: #94a3b8; }
+        .inline-meta-row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+        .inline-meta-row label { font-size: 12px; color: #6b7280; display: flex; flex-direction: column; gap: 3px; }
+        .inline-meta-row input { font-size: 14px; border: 1px solid #d1d5db; border-radius: 6px; padding: 5px 8px; background: #fff; }
+        .inline-meta-row input:focus { outline: none; border-color: #6b7280; }
         .inline-edit-actions { display: flex; gap: 8px; margin-top: 12px; }
         .inline-event-list { margin: 10px 0; }
         .inline-recalc-bar { margin: 6px 0 2px; }
@@ -541,10 +545,13 @@
             entryEl.innerHTML = `
                 <div class="entry-header">
                     <div class="entry-meta">
-                        ${esc(entry.entry_date)}${entry.entry_time ? ' ' + esc(entry.entry_time) : ''}
-                        ${entry.author ? ' · <strong>' + esc(entry.author) + '</strong>' : ''}
+                        ${entry.author ? '<strong>' + esc(entry.author) + '</strong>' : ''}
                     </div>
                     <button class="btn-ghost btn-sm" onclick="cancelInlineEdit(${entryId})">Zrušiť</button>
+                </div>
+                <div class="inline-meta-row">
+                    <label>Dátum<input type="date" id="inline-date-${entryId}" value="${esc(entry.entry_date || '')}"></label>
+                    <label>Čas záznamu<input type="time" id="inline-time-${entryId}" value="${esc(entry.entry_time || '')}"></label>
                 </div>
                 ${photoHtml}
                 <textarea class="auto-textarea" id="inline-text-${entryId}">${esc(entry.text)}</textarea>
@@ -574,6 +581,11 @@
             const ta = document.getElementById('inline-text-' + entryId);
             const textToSave = ta ? ta.value.trim() : '';
             if (!textToSave) return alert('Text záznamu nesmie byť prázdny');
+            const dateInput = document.getElementById('inline-date-' + entryId);
+            const timeInput = document.getElementById('inline-time-' + entryId);
+            const entryDate = dateInput ? dateInput.value.trim() : null;
+            const entryTime = timeInput ? timeInput.value.trim() : null;
+            if (!entryDate) return alert('Dátum záznamu nesmie byť prázdny');
             const container = document.getElementById('inline-events-' + entryId);
             const events = Array.from(container.querySelectorAll('.event-item')).map(row => ({
                 event_time: row.querySelector('.input-time').value  || null,
@@ -586,7 +598,7 @@
             try {
                 const resp = await fetch(`/entries/${entryId}`, {
                     method: 'PUT', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: textToSave, events })
+                    body: JSON.stringify({ text: textToSave, events, entry_date: entryDate, entry_time: entryTime || null })
                 });
                 if (resp.status === 401) { location.href = '/login'; return; }
                 if (!resp.ok) throw new Error(await resp.text());
