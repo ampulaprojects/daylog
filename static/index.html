@@ -394,6 +394,7 @@
         let filtersOpen    = false;
 
         function today() { return new Date().toISOString().split('T')[0]; }
+        function nowTime() { const d = new Date(); return d.toTimeString().slice(0, 5); }
 
         // ── Auto-resize textarea (JS fallback pre staršie browsery) ──────────
         const _fieldSizing = CSS.supports('field-sizing', 'content');
@@ -438,6 +439,7 @@
         }
 
         document.getElementById('entryDate').value = today();
+        document.getElementById('entryTime').value = nowTime();
         document.getElementById('searchInput').addEventListener('input', loadEntries);
 
         // ── Foto prepis ──────────────────────────────────────────────────────
@@ -782,7 +784,7 @@
 
                 if (!wasEdit) {
                     setTA('entryText', '');
-                    document.getElementById('entryTime').value = '';
+                    document.getElementById('entryTime').value = nowTime();
                     document.getElementById('entryDate').value = today();
                     currentSource = 'typed';
                 }
