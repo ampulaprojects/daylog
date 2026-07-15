@@ -248,6 +248,12 @@
             .layout-left {
                 position: sticky;
                 top: 16px;
+                /* Keď je obsah (napr. review panel s mnohými eventmi) vyšší než
+                   viewport, panel sa scrolluje sám vnútri — inak by spodok
+                   (tlačidlo "Potvrdiť a uložiť") ostal pod okrajom obrazovky.
+                   Krátky formulár sa nezmestí do limitu → žiadny scrollbar. */
+                max-height: calc(100vh - 32px);
+                overflow-y: auto;
             }
         }
     </style>
