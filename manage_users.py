@@ -3,7 +3,10 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from database import init_db, get_all_users, update_user_password, get_user_by_username
+from database import (
+    init_db, get_all_users, update_user_password, get_user_by_username,
+    create_user,
+)
 import argparse
 
 
@@ -27,6 +30,16 @@ def cmd_change_password(args):
     print(f"Heslo zmenene: {args.username}")
 
 
+def cmd_add_user(args):
+    if get_user_by_username(args.username):
+        print(f"Pouzivatel uz existuje: {args.username}")
+        return
+    if not create_user(args.username, args.password, role=args.role):
+        print(f"Nepodarilo sa vytvorit pouzivatela: {args.username}")
+        return
+    print(f"Pouzivatel vytvoreny: {args.username} (rola: {args.role})")
+
+
 def main():
     init_db()
     parser = argparse.ArgumentParser(description="daylog - sprava pouzivatelov")
@@ -38,12 +51,22 @@ def main():
     p.add_argument("username")
     p.add_argument("password")
 
+    pa = sub.add_parser("add-user", help="Vytvor noveho pouzivatela")
+    pa.add_argument("username")
+    pa.add_argument("password")
+    pa.add_argument("--role", choices=["admin", "user"], default="user",
+                    help="Rola pouzivatela (predvolene: user)")
+
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
         return
 
-    {"list-users": cmd_list_users, "change-password": cmd_change_password}[args.command](args)
+    {
+        "list-users": cmd_list_users,
+        "change-password": cmd_change_password,
+        "add-user": cmd_add_user,
+    }[args.command](args)
 
 
 if __name__ == "__main__":

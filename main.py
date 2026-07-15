@@ -9,8 +9,8 @@ from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
 from typing import Optional, List
 from database import (
-    init_db, create_user, get_user_by_username, get_user_by_id,
-    set_user_role, update_user_password,
+    init_db, get_user_by_username, get_user_by_id,
+    update_user_password,
     create_entry, get_entries, get_entry, create_event,
     delete_entry, update_entry_text, replace_entry_events,
     get_medications, create_medication, update_medication,
@@ -27,18 +27,9 @@ app = FastAPI()
 SESSION_MAX_AGE = 30 * 24 * 3600
 
 
-def _init_users():
-    if not get_user_by_username("jan"):
-        create_user("jan", "jan2026", role="admin")
-    else:
-        set_user_role("jan", "admin")
-    create_user("katka", "katka2026", role="user")
-
-
 @app.on_event("startup")
 def startup():
     init_db()
-    _init_users()
 
 
 # ── Auth helpers ────────────────────────────────────────────────────────────
