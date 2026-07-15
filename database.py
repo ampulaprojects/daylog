@@ -1,6 +1,7 @@
 from datetime import datetime
 import sqlite3
 import os
+import json
 
 DB_PATH = os.environ.get("DAYLOG_DB", "daylog.db")
 
@@ -69,6 +70,27 @@ def init_db():
             note TEXT,
             active INTEGER DEFAULT 1,
             sort_order INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS med_catalog (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            canonical_name TEXT NOT NULL,
+            aliases TEXT DEFAULT '[]',
+            kind TEXT DEFAULT 'liek',
+            strength TEXT,
+            form TEXT,
+            manufacturer TEXT,
+            sukl_code TEXT,
+            atc_code TEXT,
+            description TEXT,
+            side_effects TEXT,
+            personal_notes TEXT,
+            info_source TEXT,
+            photo_path TEXT,
+            active INTEGER DEFAULT 1,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )
@@ -405,3 +427,110 @@ def reorder_medications(items):
                      (sort_order, now, med_id))
     conn.commit()
     conn.close()
+
+
+# ── Med catalog (referenčná príručka) ────────────────────────────────────────
+
+_CATALOG_COLS = (
+    "canonical_name", "aliases", "kind", "strength", "form", "manufacturer",
+    "sukl_code", "atc_code", "description", "side_effects", "personal_notes",
+    "info_source", "photo_path"
+)
+
+
+def get_catalog(include_inactive=False):
+    conn = get_db()
+    q = "SELECT * FROM med_catalog"
+    if not include_inactive:
+        q += " WHERE active = 1"
+    q += " ORDER BY canonical_name COLLATE NOCASE"
+    rows = conn.execute(q).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_catalog_item(item_id):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM med_catalog WHERE id=?", (item_id,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def create_catalog_item(canonical_name, aliases="[]", kind="liek", strength=None,
+                        form=None, manufacturer=None, sukl_code=None, atc_code=None,
+                        description=None, side_effects=None, personal_notes=None,
+                        info_source=None, photo_path=None):
+    conn = get_db()
+    now = datetime.utcnow().isoformat()
+    cur = conn.execute(
+        """INSERT INTO med_catalog
+           (canonical_name, aliases, kind, strength, form, manufacturer, sukl_code,
+            atc_code, description, side_effects, personal_notes, info_source,
+            photo_path, active, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)""",
+        (canonical_name, aliases, kind, strength, form, manufacturer, sukl_code,
+         atc_code, description, side_effects, personal_notes, info_source,
+         photo_path, now, now)
+    )
+    conn.commit()
+    item_id = cur.lastrowid
+    conn.close()
+    return item_id
+
+
+def update_catalog_item(item_id, canonical_name, aliases, kind, strength, form,
+                        manufacturer, sukl_code, atc_code, description, side_effects,
+                        personal_notes, info_source, photo_path):
+    conn = get_db()
+    now = datetime.utcnow().isoformat()
+    conn.execute(
+        """UPDATE med_catalog SET canonical_name=?, aliases=?, kind=?, strength=?,
+           form=?, manufacturer=?, sukl_code=?, atc_code=?, description=?,
+           side_effects=?, personal_notes=?, info_source=?, photo_path=?,
+           updated_at=? WHERE id=?""",
+        (canonical_name, aliases, kind, strength, form, manufacturer, sukl_code,
+         atc_code, description, side_effects, personal_notes, info_source,
+         photo_path, now, item_id)
+    )
+    conn.commit()
+    conn.close()
+
+
+def delete_catalog_item(item_id):
+    conn = get_db()
+    conn.execute("DELETE FROM med_catalog WHERE id=?", (item_id,))
+    conn.commit()
+    conn.close()
+
+
+def set_catalog_active(item_id, active):
+    conn = get_db()
+    now = datetime.utcnow().isoformat()
+    conn.execute("UPDATE med_catalog SET active=?, updated_at=? WHERE id=?",
+                 (int(active), now, item_id))
+    conn.commit()
+    conn.close()
+
+
+def find_by_alias(name):
+    """Find a catalog item whose canonical_name or any alias matches `name`
+    (case-insensitive, trimmed). Returns dict or None."""
+    if not name:
+        return None
+    needle = name.strip().lower()
+    if not needle:
+        return None
+    conn = get_db()
+    rows = conn.execute("SELECT * FROM med_catalog WHERE active = 1").fetchall()
+    conn.close()
+    for row in rows:
+        item = dict(row)
+        if item["canonical_name"].strip().lower() == needle:
+            return item
+        try:
+            aliases = json.loads(item.get("aliases") or "[]")
+        except (ValueError, TypeError):
+            aliases = []
+        if any(str(a).strip().lower() == needle for a in aliases):
+            return item
+    return None

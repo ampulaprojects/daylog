@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>daylog — Katalóg</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, sans-serif; margin: 0; }
+        .page-wrap { max-width: 1300px; margin: 0 auto; padding: 20px 16px; }
+        h1 { font-size: 20px; }
+        h2 { font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+        input[type=text], select, textarea {
+            width: 100%; padding: 8px; font-size: 14px;
+            border: 1px solid #ccc; border-radius: 6px; font-family: inherit;
+        }
+        input[type=text]:focus, select:focus, textarea:focus { outline: none; border-color: #6b7280; }
+        textarea { resize: vertical; min-height: 52px; }
+        button { padding: 8px 16px; background: #000; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; }
+        button:hover { opacity: 0.8; }
+        button:disabled { opacity: 0.45; cursor: default; }
+        .btn-ghost  { background: #eee; color: #333; }
+        .btn-sm     { padding: 4px 10px; font-size: 12px; }
+        .btn-danger { background: none; color: #d1d5db; border: 1px solid #e5e7eb; border-radius: 4px; font-size: 11px; padding: 2px 7px; cursor: pointer; }
+        .btn-danger:hover { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
+        .btn-muted  { background: none; color: #aaa; border: 1px solid #e5e7eb; border-radius: 4px; font-size: 11px; padding: 2px 7px; cursor: pointer; }
+        .btn-muted:hover { background: #f5f5f5; color: #333; border-color: #ccc; }
+        .section { margin-bottom: 24px; }
+        .form-group { margin-bottom: 10px; }
+        .form-row { display: flex; gap: 8px; }
+        .form-row > * { flex: 1; min-width: 0; }
+        label { font-size: 13px; color: #555; display: block; margin-bottom: 4px; }
+        .field-hint { font-size: 11px; color: #9ca3af; margin-top: 3px; }
+
+        /* ── Badges ─────────────────────────────────────────────────────── */
+        .badge { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; color: #fff; white-space: nowrap; }
+        .badge-liek    { background: #2563eb; }
+        .badge-vitamin { background: #16a34a; }
+        .badge-doplnok { background: #d97706; }
+        .badge-inactive { background: #9ca3af; }
+
+        /* ── Layout ──────────────────────────────────────────────────────── */
+        .page-header { margin-bottom: 16px; }
+        .page-layout { display: flex; flex-direction: column; }
+        .layout-left, .layout-right { min-width: 0; }
+        @media (min-width: 900px) {
+            .page-layout {
+                display: grid;
+                grid-template-columns: 360px 1fr;
+                column-gap: 32px;
+                align-items: start;
+            }
+            .layout-left { position: sticky; top: 16px; }
+        }
+
+        /* ── Form panel ──────────────────────────────────────────────────── */
+        .form-panel { border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; background: #fafafa; }
+        .form-panel h2 { margin-bottom: 14px; }
+        .form-actions { display: flex; gap: 8px; margin-top: 14px; }
+
+        /* ── List ────────────────────────────────────────────────────────── */
+        .list-toolbar {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 12px; flex-wrap: wrap; gap: 8px;
+        }
+        .list-title { font-size: 15px; font-weight: 600; color: #374151; }
+
+        /* ── Catalog card ────────────────────────────────────────────────── */
+        .cat-card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-bottom: 8px; background: #fff; }
+        .cat-card.inactive { opacity: 0.5; }
+        .cat-card.editing  { border-color: #94a3b8; background: #f8fafc; }
+        .cat-top { display: flex; align-items: flex-start; gap: 10px; }
+        .cat-thumb { width: 46px; height: 46px; flex-shrink: 0; border-radius: 6px; object-fit: cover; border: 1px solid #e5e7eb; background: #f9fafb; cursor: zoom-in; }
+        .cat-main { flex: 1; min-width: 0; }
+        .cat-head-row { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+        .cat-name { font-size: 15px; font-weight: 600; color: #111; flex: 1; min-width: 0; }
+        .cat-name.inactive-name { text-decoration: line-through; color: #9ca3af; }
+        .cat-caret { color: #bbb; font-size: 12px; flex-shrink: 0; transition: transform 0.15s; }
+        .cat-caret.open { transform: rotate(90deg); }
+        .cat-sub { font-size: 13px; color: #555; display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 4px; }
+        .cat-sub-item { display: flex; align-items: center; gap: 4px; }
+        .cat-sub-label { font-size: 11px; color: #9ca3af; }
+        .alias-count { font-size: 11px; color: #6b7280; background: #f3f4f6; border-radius: 10px; padding: 1px 8px; }
+
+        /* ── Card detail (expanded) ──────────────────────────────────────── */
+        .cat-detail { margin-top: 10px; padding-top: 10px; border-top: 1px solid #f0f0f0; font-size: 13px; color: #374151; }
+        .cat-detail-block { margin-bottom: 8px; }
+        .cat-detail-block .dl { font-size: 11px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px; }
+        .cat-detail-block .dv { white-space: pre-wrap; }
+        .cat-detail-block.notes .dv { color: #7c3aed; }
+        .alias-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+        .alias-chip { font-size: 12px; background: #eef2ff; color: #4338ca; border-radius: 4px; padding: 1px 8px; }
+        .cat-btns { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 10px; }
+
+        /* ── Inline edit ─────────────────────────────────────────────────── */
+        .inline-edit .form-group { margin-bottom: 8px; }
+        .inline-edit .form-actions { display: flex; gap: 8px; margin-top: 10px; }
+
+        .empty-state { text-align: center; padding: 40px 16px; color: #9ca3af; font-size: 14px; }
+        .status-bar { display: none; background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; border-radius: 6px; padding: 8px 12px; font-size: 13px; margin-bottom: 12px; }
+    </style>
+</head>
+<body>
+<div class="page-wrap">
+    <div class="page-header">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+            <h1>daylog</h1>
+            <div style="display:flex;gap:10px;align-items:center">
+                <a href="/" style="font-size:13px;color:#888;text-decoration:none">Záznamy</a>
+                <a href="/meds" style="font-size:13px;color:#888;text-decoration:none">Lieky</a>
+                <a href="/catalog" style="font-size:13px;color:#111;font-weight:600;text-decoration:none">Katalóg</a>
+                <a href="/profile" style="font-size:13px;color:#888;text-decoration:none">Profil</a>
+                <form method="POST" action="/logout">
+                    <button type="submit" class="btn-ghost" style="padding:6px 12px;font-size:13px">Odhlásiť</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="page-layout">
+        <!-- ── Ľavá zóna: pridávací formulár ──────────────────────────── -->
+        <div class="layout-left">
+            <div class="form-panel">
+                <h2>Pridať do katalógu</h2>
+
+                <div class="form-group">
+                    <label>Kanonický názov <span style="color:#e53e3e">*</span></label>
+                    <input type="text" id="fName" placeholder="napr. Orfiril Long">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Typ</label>
+                        <select id="fKind">
+                            <option value="liek">liek</option>
+                            <option value="vitamin">vitamín</option>
+                            <option value="doplnok">doplnok</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Sila</label>
+                        <input type="text" id="fStrength" placeholder="300mg">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Forma</label>
+                        <input type="text" id="fForm" placeholder="tableta, kvapky…">
+                    </div>
+                    <div class="form-group">
+                        <label>Výrobca / držiteľ</label>
+                        <input type="text" id="fManufacturer" placeholder="Desitin…">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Aliasy <span style="color:#bbb">(varianty, oddelené čiarkou)</span></label>
+                    <input type="text" id="fAliases" placeholder="Orfiril, Ofriril, Ofrilril">
+                    <div class="field-hint">názvy z diktovania, ktoré sa majú normalizovať na kanonický názov</div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>ŠÚKL kód</label>
+                        <input type="text" id="fSukl" placeholder="voliteľné">
+                    </div>
+                    <div class="form-group">
+                        <label>ATC kód</label>
+                        <input type="text" id="fAtc" placeholder="voliteľné">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label>Popis <span style="color:#bbb">(čo to je, ako funguje)</span></label>
+                    <textarea id="fDescription"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Vedľajšie účinky</label>
+                    <textarea id="fSideEffects"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Moje pozorovania <span style="color:#bbb">(u syna)</span></label>
+                    <textarea id="fNotes" placeholder="vlastné poznámky, oddelene od generického popisu"></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label>Zdroj informácií</label>
+                    <input type="text" id="fSource" placeholder="manual / web + URL">
+                </div>
+
+                <div class="form-actions">
+                    <button id="saveBtn" onclick="saveItem()">Uložiť</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Pravá zóna: zoznam ──────────────────────────────────────── -->
+        <div class="layout-right">
+            <div class="section">
+                <div class="status-bar" id="statusBar"></div>
+                <div class="list-toolbar">
+                    <span class="list-title">Katalóg liekov (<span id="catCount">0</span>)</span>
+                    <button class="btn-ghost btn-sm" id="toggleInactiveBtn" onclick="toggleShowInactive()">Zobraziť neaktívne</button>
+                </div>
+                <div id="catList"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let items = [];
+    let editingId = null;
+    let expandedId = null;
+    let showInactive = false;
+
+    const KIND_LABELS = { liek: 'liek', vitamin: 'vitamín', doplnok: 'doplnok' };
+
+    function esc(s) {
+        return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function parseAliases(str) {
+        return (str || '').split(',').map(s => s.trim()).filter(Boolean);
+    }
+
+    function badge(kind, active) {
+        if (!active) return '<span class="badge badge-inactive">neaktívny</span>';
+        return `<span class="badge badge-${esc(kind)}">${esc(KIND_LABELS[kind] || kind)}</span>`;
+    }
+
+    function thumbUrl(photo_path) {
+        return '/photos/' + esc(String(photo_path).replace('uploads/', ''));
+    }
+
+    // ── Load & render ────────────────────────────────────────────────────────
+
+    async function loadCatalog() {
+        const resp = await fetch('/catalog?include_inactive=true', {
+            headers: { 'Accept': 'application/json' }
+        });
+        if (resp.status === 401) { location.href = '/login'; return; }
+        items = await resp.json();
+        renderCatalog();
+    }
+
+    function renderCatalog() {
+        const list = document.getElementById('catList');
+        const visible = (showInactive ? items : items.filter(i => i.active))
+            .slice().sort((a, b) => a.canonical_name.localeCompare(b.canonical_name, 'sk', { sensitivity: 'base' }));
+
+        document.getElementById('catCount').textContent = visible.length;
+
+        if (!visible.length) {
+            list.innerHTML = '<div class="empty-state">Katalóg je prázdny.<br>Pridaj prvý liek formulárom vľavo.</div>';
+            return;
+        }
+
+        list.innerHTML = visible.map(i => editingId === i.id ? editCardHtml(i) : viewCardHtml(i)).join('');
+    }
+
+    function viewCardHtml(i) {
+        const aliases = i.aliases || [];
+        const sub = [];
+        if (i.strength || i.form) sub.push(`<span class="cat-sub-item">${esc([i.strength, i.form].filter(Boolean).join(' · '))}</span>`);
+        if (i.manufacturer) sub.push(`<span class="cat-sub-item"><span class="cat-sub-label">výrobca</span> ${esc(i.manufacturer)}</span>`);
+        if (aliases.length) sub.push(`<span class="alias-count">${aliases.length} ${aliases.length === 1 ? 'alias' : 'aliasov'}</span>`);
+
+        const isOpen = expandedId === i.id;
+        const thumb = i.photo_path
+            ? `<img class="cat-thumb" src="${thumbUrl(i.photo_path)}" onclick="window.open(this.src)" loading="lazy" alt="">`
+            : '';
+
+        return `
+        <div class="cat-card ${i.active ? '' : 'inactive'}" id="cat-${i.id}">
+            <div class="cat-top">
+                ${thumb}
+                <div class="cat-main">
+                    <div class="cat-head-row" onclick="toggleExpand(${i.id})">
+                        <span class="cat-caret ${isOpen ? 'open' : ''}">▶</span>
+                        <span class="cat-name ${i.active ? '' : 'inactive-name'}">${esc(i.canonical_name)}</span>
+                        ${badge(i.kind, i.active)}
+                    </div>
+                    ${sub.length ? `<div class="cat-sub">${sub.join('')}</div>` : ''}
+                    ${isOpen ? detailHtml(i) : ''}
+                </div>
+            </div>
+        </div>`;
+    }
+
+    function detailHtml(i) {
+        const aliases = i.aliases || [];
+        const blocks = [];
+        if (aliases.length) {
+            blocks.push(`<div class="cat-detail-block"><div class="dl">Aliasy</div>
+                <div class="alias-chips">${aliases.map(a => `<span class="alias-chip">${esc(a)}</span>`).join('')}</div></div>`);
+        }
+        if (i.description)   blocks.push(`<div class="cat-detail-block"><div class="dl">Popis</div><div class="dv">${esc(i.description)}</div></div>`);
+        if (i.side_effects) blocks.push(`<div class="cat-detail-block"><div class="dl">Vedľajšie účinky</div><div class="dv">${esc(i.side_effects)}</div></div>`);
+        if (i.personal_notes) blocks.push(`<div class="cat-detail-block notes"><div class="dl">Moje pozorovania</div><div class="dv">${esc(i.personal_notes)}</div></div>`);
+        const codes = [];
+        if (i.sukl_code) codes.push(`<span class="cat-sub-item"><span class="cat-sub-label">ŠÚKL</span> ${esc(i.sukl_code)}</span>`);
+        if (i.atc_code)  codes.push(`<span class="cat-sub-item"><span class="cat-sub-label">ATC</span> ${esc(i.atc_code)}</span>`);
+        if (codes.length) blocks.push(`<div class="cat-detail-block"><div class="cat-sub">${codes.join('')}</div></div>`);
+        if (i.info_source) blocks.push(`<div class="cat-detail-block"><div class="dl">Zdroj</div><div class="dv">${esc(i.info_source)}</div></div>`);
+
+        return `<div class="cat-detail">
+            ${blocks.join('') || '<div style="color:#9ca3af">Žiadne ďalšie detaily.</div>'}
+            <div class="cat-btns">
+                <button class="btn-muted" onclick="startEdit(${i.id})">Upraviť</button>
+                <button class="btn-muted" onclick="toggleActive(${i.id}, ${i.active})">${i.active ? 'Deaktivovať' : 'Aktivovať'}</button>
+                <button class="btn-danger" onclick="deleteItem(${i.id})">Zmazať</button>
+            </div>
+        </div>`;
+    }
+
+    // ── Inline edit ──────────────────────────────────────────────────────────
+
+    function editCardHtml(i) {
+        const aliases = (i.aliases || []).join(', ');
+        return `
+        <div class="cat-card editing" id="cat-${i.id}">
+            <div class="inline-edit">
+                <div class="form-group">
+                    <label>Kanonický názov <span style="color:#e53e3e">*</span></label>
+                    <input type="text" id="ie-name" value="${esc(i.canonical_name)}">
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Typ</label>
+                        <select id="ie-kind">
+                            ${['liek','vitamin','doplnok'].map(k => `<option value="${k}" ${i.kind===k?'selected':''}>${KIND_LABELS[k]}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Sila</label>
+                        <input type="text" id="ie-strength" value="${esc(i.strength)}">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>Forma</label><input type="text" id="ie-form" value="${esc(i.form)}"></div>
+                    <div class="form-group"><label>Výrobca</label><input type="text" id="ie-manufacturer" value="${esc(i.manufacturer)}"></div>
+                </div>
+                <div class="form-group">
+                    <label>Aliasy <span style="color:#bbb">(oddelené čiarkou)</span></label>
+                    <input type="text" id="ie-aliases" value="${esc(aliases)}">
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>ŠÚKL kód</label><input type="text" id="ie-sukl" value="${esc(i.sukl_code)}"></div>
+                    <div class="form-group"><label>ATC kód</label><input type="text" id="ie-atc" value="${esc(i.atc_code)}"></div>
+                </div>
+                <div class="form-group"><label>Popis</label><textarea id="ie-description">${esc(i.description)}</textarea></div>
+                <div class="form-group"><label>Vedľajšie účinky</label><textarea id="ie-side">${esc(i.side_effects)}</textarea></div>
+                <div class="form-group"><label>Moje pozorovania</label><textarea id="ie-notes">${esc(i.personal_notes)}</textarea></div>
+                <div class="form-group"><label>Zdroj informácií</label><input type="text" id="ie-source" value="${esc(i.info_source)}"></div>
+                <div class="form-actions">
+                    <button onclick="saveInlineEdit(${i.id})">Uložiť zmeny</button>
+                    <button class="btn-ghost" onclick="cancelEdit()">Zrušiť</button>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    function startEdit(id) {
+        editingId = id;
+        renderCatalog();
+        document.getElementById('cat-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        document.getElementById('ie-name')?.focus();
+    }
+
+    function cancelEdit() {
+        editingId = null;
+        renderCatalog();
+    }
+
+    function collectEdit() {
+        const val = id => document.getElementById(id).value.trim();
+        return {
+            canonical_name: val('ie-name'),
+            aliases: parseAliases(val('ie-aliases')),
+            kind: document.getElementById('ie-kind').value,
+            strength: val('ie-strength') || null,
+            form: val('ie-form') || null,
+            manufacturer: val('ie-manufacturer') || null,
+            sukl_code: val('ie-sukl') || null,
+            atc_code: val('ie-atc') || null,
+            description: val('ie-description') || null,
+            side_effects: val('ie-side') || null,
+            personal_notes: val('ie-notes') || null,
+            info_source: val('ie-source') || null,
+        };
+    }
+
+    async function saveInlineEdit(id) {
+        const body = collectEdit();
+        if (!body.canonical_name) return alert('Kanonický názov nesmie byť prázdny');
+        const resp = await fetch(`/catalog/${id}`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        if (resp.status === 401) { location.href = '/login'; return; }
+        if (!resp.ok) return alert('Chyba: ' + await resp.text());
+        editingId = null;
+        showStatus('Uložené');
+        loadCatalog();
+    }
+
+    // ── Create ─────────────────────────────────────────────────────────────────
+
+    async function saveItem() {
+        const val = id => document.getElementById(id).value.trim();
+        const name = val('fName');
+        if (!name) return alert('Kanonický názov je povinný');
+        const body = {
+            canonical_name: name,
+            aliases: parseAliases(val('fAliases')),
+            kind: document.getElementById('fKind').value,
+            strength: val('fStrength') || null,
+            form: val('fForm') || null,
+            manufacturer: val('fManufacturer') || null,
+            sukl_code: val('fSukl') || null,
+            atc_code: val('fAtc') || null,
+            description: val('fDescription') || null,
+            side_effects: val('fSideEffects') || null,
+            personal_notes: val('fNotes') || null,
+            info_source: val('fSource') || null,
+        };
+        const btn = document.getElementById('saveBtn');
+        btn.disabled = true; btn.textContent = 'Ukladám…';
+        try {
+            const resp = await fetch('/catalog', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            if (resp.status === 401) { location.href = '/login'; return; }
+            if (!resp.ok) throw new Error(await resp.text());
+            ['fName','fStrength','fForm','fManufacturer','fAliases','fSukl','fAtc',
+             'fDescription','fSideEffects','fNotes','fSource'].forEach(id => document.getElementById(id).value = '');
+            document.getElementById('fKind').value = 'liek';
+            showStatus('Pridané do katalógu');
+            loadCatalog();
+        } catch(e) {
+            alert('Chyba: ' + e.message);
+        } finally {
+            btn.disabled = false; btn.textContent = 'Uložiť';
+        }
+    }
+
+    // ── Actions ────────────────────────────────────────────────────────────────
+
+    async function deleteItem(id) {
+        const it = items.find(x => x.id === id);
+        if (!confirm(`Zmazať "${it?.canonical_name}" z katalógu?`)) return;
+        const resp = await fetch(`/catalog/${id}`, { method: 'DELETE' });
+        if (resp.status === 401) { location.href = '/login'; return; }
+        showStatus('Zmazané');
+        loadCatalog();
+    }
+
+    async function toggleActive(id, active) {
+        const resp = await fetch(`/catalog/${id}/active?active=${active === 1 ? false : true}`, { method: 'PATCH' });
+        if (resp.status === 401) { location.href = '/login'; return; }
+        loadCatalog();
+    }
+
+    function toggleExpand(id) {
+        expandedId = expandedId === id ? null : id;
+        renderCatalog();
+    }
+
+    function toggleShowInactive() {
+        showInactive = !showInactive;
+        document.getElementById('toggleInactiveBtn').textContent =
+            showInactive ? 'Skryť neaktívne' : 'Zobraziť neaktívne';
+        renderCatalog();
+    }
+
+    let statusTimer = null;
+    function showStatus(msg) {
+        const s = document.getElementById('statusBar');
+        s.textContent = '✓ ' + msg;
+        s.style.display = 'block';
+        clearTimeout(statusTimer);
+        statusTimer = setTimeout(() => s.style.display = 'none', 3000);
+    }
+
+    loadCatalog();
+</script>
+</body>
+</html>

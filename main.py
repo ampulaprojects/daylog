@@ -1,8 +1,9 @@
 import io
+import json
 import pathlib
 import re
 from datetime import datetime
-from fastapi import FastAPI, HTTPException, Cookie, Depends, Form, UploadFile, File
+from fastapi import FastAPI, HTTPException, Cookie, Depends, Form, UploadFile, File, Header
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
@@ -13,7 +14,9 @@ from database import (
     create_entry, get_entries, get_entry, create_event,
     delete_entry, update_entry_text, replace_entry_events,
     get_medications, create_medication, update_medication,
-    delete_medication, set_medication_active, reorder_medications
+    delete_medication, set_medication_active, reorder_medications,
+    get_catalog, get_catalog_item, create_catalog_item, update_catalog_item,
+    delete_catalog_item, set_catalog_active, find_by_alias
 )
 from auth import verify_password, create_session_token, decode_session_token
 from llm import extract_events, transcribe_photo
@@ -81,6 +84,10 @@ def meds_page(session: Optional[str] = Cookie(None)):
     if not (decode_session_token(session) if session else None):
         return RedirectResponse(url="/login", status_code=302)
     return FileResponse("static/meds.html")
+
+
+# Note: GET /catalog is defined once, in the Medications/catalog section below —
+# it serves the HTML page for browsers and JSON for API clients (Accept header).
 
 
 # ── Auth endpoints ────────────────────────────────────────────────────────────
@@ -339,6 +346,96 @@ def remove_medication(med_id: int, user=Depends(require_auth)):
 def toggle_med_active(med_id: int, active: bool, user=Depends(require_auth)):
     set_medication_active(med_id, active)
     return {"id": med_id, "active": active}
+
+
+# ── Med catalog (referenčná príručka) ────────────────────────────────────────
+
+class CatalogBody(BaseModel):
+    canonical_name: str
+    aliases: List[str] = []
+    kind: str = "liek"
+    strength: Optional[str] = None
+    form: Optional[str] = None
+    manufacturer: Optional[str] = None
+    sukl_code: Optional[str] = None
+    atc_code: Optional[str] = None
+    description: Optional[str] = None
+    side_effects: Optional[str] = None
+    personal_notes: Optional[str] = None
+    info_source: Optional[str] = None
+    photo_path: Optional[str] = None
+
+
+def _catalog_out(item: dict) -> dict:
+    """Parse the aliases JSON column into a real list for the client."""
+    try:
+        item["aliases"] = json.loads(item.get("aliases") or "[]")
+    except (ValueError, TypeError):
+        item["aliases"] = []
+    return item
+
+
+@app.get("/catalog")
+def catalog_root(include_inactive: bool = False,
+                 session: Optional[str] = Cookie(None),
+                 accept: str = Header("")):
+    """Browsers (Accept: text/html) get the page; API clients that send
+    Accept: application/json get the JSON list. Both require auth."""
+    authed = bool(decode_session_token(session)) if session else False
+    if "application/json" in accept.lower():
+        if not authed:
+            raise HTTPException(status_code=401, detail="Nie si prihlásený")
+        return [_catalog_out(i) for i in get_catalog(include_inactive=include_inactive)]
+    if not authed:
+        return RedirectResponse(url="/login", status_code=302)
+    return FileResponse("static/catalog.html")
+
+
+@app.post("/catalog", status_code=201)
+def add_catalog(body: CatalogBody, user=Depends(require_auth)):
+    item_id = create_catalog_item(
+        canonical_name=body.canonical_name, aliases=json.dumps(body.aliases),
+        kind=body.kind, strength=body.strength, form=body.form,
+        manufacturer=body.manufacturer, sukl_code=body.sukl_code,
+        atc_code=body.atc_code, description=body.description,
+        side_effects=body.side_effects, personal_notes=body.personal_notes,
+        info_source=body.info_source, photo_path=body.photo_path
+    )
+    return {"id": item_id}
+
+
+@app.get("/catalog/lookup")
+def catalog_lookup(name: str, user=Depends(require_auth)):
+    item = find_by_alias(name)
+    if not item:
+        return {"match": None}
+    return {"match": _catalog_out(item)}
+
+
+@app.put("/catalog/{item_id}")
+def edit_catalog(item_id: int, body: CatalogBody, user=Depends(require_auth)):
+    if not get_catalog_item(item_id):
+        raise HTTPException(status_code=404, detail="Položka nenájdená")
+    update_catalog_item(
+        item_id=item_id, canonical_name=body.canonical_name,
+        aliases=json.dumps(body.aliases), kind=body.kind, strength=body.strength,
+        form=body.form, manufacturer=body.manufacturer, sukl_code=body.sukl_code,
+        atc_code=body.atc_code, description=body.description,
+        side_effects=body.side_effects, personal_notes=body.personal_notes,
+        info_source=body.info_source, photo_path=body.photo_path
+    )
+    return {"id": item_id}
+
+
+@app.delete("/catalog/{item_id}", status_code=204)
+def remove_catalog(item_id: int, user=Depends(require_auth)):
+    delete_catalog_item(item_id)
+
+
+@app.patch("/catalog/{item_id}/active")
+def toggle_catalog_active(item_id: int, active: bool, user=Depends(require_auth)):
+    set_catalog_active(item_id, active)
+    return {"id": item_id, "active": active}
 
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
