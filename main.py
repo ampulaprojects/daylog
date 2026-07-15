@@ -141,6 +141,7 @@ class EventItem(BaseModel):
     event_type: str
     value: str
     note: Optional[str] = None
+    catalog_id: Optional[int] = None
 
 
 class ConfirmRequest(BaseModel):
@@ -174,12 +175,44 @@ async def entries_transcribe(file: UploadFile = File(...), user=Depends(require_
     }
 
 
+# split na oddeľovače množstva — ASCII 'x'/'X' zámerne NIE (rozbil by napr. "Chlorprotixen")
+_MED_TOKEN_SPLIT = re.compile(r"[\s,;/×·]+")
+
+
+def _enrich_with_catalog(events: list) -> None:
+    """Pre každý liekový event doplní catalog_id / catalog_name / matched.
+    Hodnota (value) sa NEPREPISUJE — je to audit toho, čo bolo reálne povedané."""
+    for ev in events:
+        if ev.get("event_type") != "liek":
+            ev["catalog_id"] = None
+            ev["catalog_name"] = None
+            ev["matched"] = None
+            continue
+        candidates = []
+        med_name = (ev.get("med_name") or "").strip()
+        if med_name:
+            candidates.append(med_name)
+        for tok in _MED_TOKEN_SPLIT.split(ev.get("value") or ""):
+            tok = tok.strip()
+            if tok and tok not in candidates:
+                candidates.append(tok)
+        match = None
+        for cand in candidates:
+            match = find_by_alias(cand)
+            if match:
+                break
+        ev["catalog_id"] = match["id"] if match else None
+        ev["catalog_name"] = match["canonical_name"] if match else None
+        ev["matched"] = bool(match)
+
+
 @app.post("/entries/extract")
 def entries_extract(body: ExtractRequest, user=Depends(require_auth)):
     try:
         events, cleaned_text, llm_raw, llm_model = extract_events(body.text, body.entry_date)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLM chyba: {e}")
+    _enrich_with_catalog(events)
     return {"events": events, "cleaned_text": cleaned_text, "llm_raw": llm_raw, "llm_model": llm_model}
 
 
@@ -205,6 +238,7 @@ def entries_confirm(body: ConfirmRequest, user=Depends(require_auth)):
             value=ev.value,
             event_time=ev.event_time,
             note=ev.note,
+            catalog_id=ev.catalog_id if ev.event_type == "liek" else None,
         )
     return {"entry_id": entry_id, "event_count": len(body.events)}
 
@@ -225,7 +259,9 @@ def delete_entry_endpoint(entry_id: int, user=Depends(require_auth)):
 def update_entry_endpoint(entry_id: int, body: EntryUpdate, user=Depends(require_auth)):
     update_entry_text(entry_id, body.text, body.entry_date, body.entry_time)
     events_data = [{"event_time": e.event_time, "event_type": e.event_type,
-                    "value": e.value, "note": e.note} for e in body.events]
+                    "value": e.value, "note": e.note,
+                    "catalog_id": e.catalog_id if e.event_type == "liek" else None}
+                   for e in body.events]
     replace_entry_events(entry_id, user["id"], events_data)
     return {"entry_id": entry_id, "event_count": len(body.events)}
 

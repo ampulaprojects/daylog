@@ -28,11 +28,14 @@ Vráť JSON objekt s dvoma poliami — žiadny iný text:
   event_type — "liek" | "nalada" | "spravanie" | "jedlo" | "aktivita" | "spatok" | "fyzicke" | "poznamka"
   value — popis max 60 znakov
   note — doplnok alebo null
+  med_name — LEN pri type "liek": čistý názov lieku bez množstva (napr. "Orfiril", "Tisercin"). Pri ostatných typoch null.
 
 Typy: liek=podanie lieku/vitamínov, nalada=emočný stav, spravanie=správanie/agresivita/stereotypy, jedlo=jedlo/pitie, aktivita=fyzická/sociálna aktivita, spatok=spánok/odpočinok, fyzicke=fyzické prejavy (stolica/zvracanie/teplota), poznamka=iné.
 
+DÔLEŽITÉ pre lieky: Ak jeden záznam obsahuje VIAC liekov (napr. "3× Orfiril, 1/2 Tisercin, 1/4 Fevarin"), rozdeľ ich na SAMOSTATNÉ eventy typu "liek" — každý s rovnakým časom, každý len s JEDNÝM liekom. value obsahuje množstvo aj názov ("3× Orfiril"), med_name len názov ("Orfiril"). Vitamíny a doplnky rozdeľ rovnako.
+
 Príklad výstupu:
-{"cleaned_text": "...", "events": [{"event_time": "08:00", "event_type": "aktivita", "value": "vstal", "note": null}]}"""
+{"cleaned_text": "...", "events": [{"event_time": "08:00", "event_type": "liek", "value": "3× Orfiril", "note": null, "med_name": "Orfiril"}, {"event_time": "08:00", "event_type": "liek", "value": "1/2 Tisercin", "note": null, "med_name": "Tisercin"}, {"event_time": "10:00", "event_type": "aktivita", "value": "vstal", "note": null, "med_name": null}]}"""
 
 
 MODEL_NAME = "claude-sonnet-4-6"

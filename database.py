@@ -52,9 +52,14 @@ def init_db():
             value TEXT,
             note TEXT,
             confirmed INTEGER DEFAULT 0,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            catalog_id INTEGER REFERENCES med_catalog(id)
         )
     """)
+    try:
+        conn.execute("ALTER TABLE events ADD COLUMN catalog_id INTEGER")
+    except Exception:
+        pass
     conn.execute("""
         CREATE TABLE IF NOT EXISTS med_schedule (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -203,7 +208,11 @@ def get_entries(search=None, limit=50, with_events=False):
         ids = [e["id"] for e in entries]
         placeholders = ",".join("?" * len(ids))
         ev_rows = conn.execute(
-            f"SELECT * FROM events WHERE entry_id IN ({placeholders}) ORDER BY event_time, created_at",
+            f"""SELECT ev.*, mc.canonical_name AS catalog_name
+                FROM events ev
+                LEFT JOIN med_catalog mc ON ev.catalog_id = mc.id
+                WHERE ev.entry_id IN ({placeholders})
+                ORDER BY ev.event_time, ev.created_at""",
             ids
         ).fetchall()
         evs_by_id: dict = {}
@@ -249,14 +258,14 @@ def normalize_time(s):
     return s
 
 
-def create_event(entry_id, user_id, event_type, value, event_time=None, note=None):
+def create_event(entry_id, user_id, event_type, value, event_time=None, note=None, catalog_id=None):
     conn = get_db()
     now = datetime.utcnow().isoformat()
     cur = conn.execute(
         """INSERT INTO events
-           (entry_id, user_id, event_time, event_type, value, note, confirmed, created_at)
-           VALUES (?,?,?,?,?,?,0,?)""",
-        (entry_id, user_id, normalize_time(event_time), event_type, value, note, now)
+           (entry_id, user_id, event_time, event_type, value, note, catalog_id, confirmed, created_at)
+           VALUES (?,?,?,?,?,?,?,0,?)""",
+        (entry_id, user_id, normalize_time(event_time), event_type, value, note, catalog_id, now)
     )
     conn.commit()
     event_id = cur.lastrowid
@@ -339,10 +348,10 @@ def replace_entry_events(entry_id: int, user_id: int, events: list):
     for ev in events:
         conn.execute(
             """INSERT INTO events
-               (entry_id, user_id, event_time, event_type, value, note, confirmed, created_at)
-               VALUES (?,?,?,?,?,?,1,?)""",
+               (entry_id, user_id, event_time, event_type, value, note, catalog_id, confirmed, created_at)
+               VALUES (?,?,?,?,?,?,?,1,?)""",
             (entry_id, user_id, normalize_time(ev.get("event_time")), ev.get("event_type"),
-             ev.get("value"), ev.get("note"), now)
+             ev.get("value"), ev.get("note"), ev.get("catalog_id"), now)
         )
     conn.commit()
     conn.close()

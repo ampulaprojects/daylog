@@ -121,6 +121,22 @@
         .event-item .input-note:focus { outline: none; border-color: #6b7280; }
         .event-item .input-note::placeholder { color: #d1d5db; font-style: italic; }
 
+        /* ── Catalog pairing (liek events) ──────────────────────────────── */
+        .event-item .cat-link { grid-column: 1 / -1; grid-row: 4; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .cat-badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px; white-space: nowrap; }
+        .cat-badge.matched   { background: #dcfce7; color: #166534; }
+        .cat-badge.unmatched { background: #fef3c7; color: #92400e; }
+        .cat-select { font-size: 12px; padding: 3px 6px; border: 1px solid #d1d5db; border-radius: 4px; background: #fff; color: #374151; max-width: 170px; }
+        .cat-add-btn { font-size: 11px; padding: 2px 8px; background: #f59e0b; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+        .cat-add-btn:hover { background: #d97706; }
+        .cat-addform { grid-column: 1 / -1; grid-row: 5; display: flex; flex-direction: column; gap: 5px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 8px; margin-top: 2px; }
+        .cat-addform .r { display: flex; gap: 5px; }
+        .cat-addform input, .cat-addform select { font-size: 12px; padding: 4px 6px; border: 1px solid #d1d5db; border-radius: 4px; }
+        .cat-addform input { flex: 1; min-width: 0; }
+        .cat-addform .lbl { font-size: 10px; color: #92400e; font-weight: 600; }
+        .cat-addform .acts { display: flex; gap: 6px; }
+        .cat-addform button { font-size: 12px; padding: 4px 12px; }
+
         .del-btn { background: none; color: #d1d5db; border: none; padding: 2px 5px; font-size: 15px; cursor: pointer; border-radius: 3px; flex-shrink: 0; }
         .del-btn:hover { background: #fee2e2; color: #dc2626; }
         .review-actions { display: flex; gap: 8px; margin-top: 12px; }
@@ -180,6 +196,7 @@
         .ev-row-date { color: #888; font-size: 12px; min-width: 78px; }
         .ev-row-time { color: #888; font-size: 12px; min-width: 42px; font-variant-numeric: tabular-nums; }
         .ev-row-val { color: #1a1a1a; }
+        .ev-cat { font-size: 11px; color: #166534; background: #dcfce7; border-radius: 3px; padding: 0 5px; white-space: nowrap; }
 
         /* ── Entry list ─────────────────────────────────────────────────── */
         .entry { border: 1px solid #eee; border-radius: 6px; padding: 12px; margin-bottom: 10px; }
@@ -595,6 +612,7 @@
                 event_type: row.querySelector('.input-type').value,
                 value:      row.querySelector('.input-value').value.trim(),
                 note:       row.querySelector('.input-note').value.trim() || null,
+                catalog_id: rowCatalogId(row),
             })).filter(ev => ev.value);
             const saveBtn = entryEl.querySelector('.inline-edit-actions button');
             if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Ukladám...'; }
@@ -632,12 +650,17 @@
 
             // Zachyť aktuálne eventy pred prepočtom (vrátane ručných úprav)
             const container = document.getElementById('inline-events-' + entryId);
-            inlinePreRecalcEvents = Array.from(container.querySelectorAll('.event-item')).map(row => ({
-                event_time: row.querySelector('.input-time').value  || null,
-                event_type: row.querySelector('.input-type').value,
-                value:      row.querySelector('.input-value').value.trim(),
-                note:       row.querySelector('.input-note').value.trim() || null,
-            })).filter(ev => ev.value);
+            inlinePreRecalcEvents = Array.from(container.querySelectorAll('.event-item')).map(row => {
+                const catId = rowCatalogId(row);
+                return {
+                    event_time: row.querySelector('.input-time').value  || null,
+                    event_type: row.querySelector('.input-type').value,
+                    value:      row.querySelector('.input-value').value.trim(),
+                    note:       row.querySelector('.input-note').value.trim() || null,
+                    catalog_id: catId,
+                    catalog_name: catId ? catNameById(catId) : null,
+                };
+            }).filter(ev => ev.value);
 
             const btn = document.getElementById('inline-recalc-btn-' + entryId);
             btn.disabled = true; btn.textContent = 'Prepočítavam...';
@@ -689,18 +712,151 @@
             const delOnclick = onDelete
                 ? `this.closest('.event-item').remove(); ${onDelete}`
                 : `this.closest('.event-item').remove()`;
-            return events.map(ev => `
-                <div class="event-item">
-                    <select class="input-type badge-${ev.event_type}"
-                            onchange="this.className='input-type badge-'+this.value">
+            return events.map(ev => {
+                const catId = ev.catalog_id ? String(ev.catalog_id) : '';
+                const catLink = ev.event_type === 'liek'
+                    ? `<div class="cat-link" data-med-name="${esc(ev.med_name || '')}">${catControlHtml(ev.catalog_id || null, ev.catalog_name || null)}</div>`
+                    : '';
+                return `
+                <div class="event-item" data-catalog-id="${catId}">
+                    <select class="input-type badge-${ev.event_type}" onchange="onTypeChange(this)">
                         ${typeOptions(ev.event_type)}
                     </select>
                     <input type="time"  class="input-time"  value="${esc(ev.event_time || '')}">
                     <input type="text"  class="input-value" value="${esc(ev.value)}">
                     <input type="text"  class="input-note"  placeholder="poznámka..." value="${esc(ev.note || '')}">
                     <button class="del-btn" onclick="${delOnclick}" title="Odstrániť">✕</button>
+                    ${catLink}
+                </div>`;
+            }).join('');
+        }
+
+        // ── Catalog pairing (liek events) ──────────────────────────────────────
+        let catalogList = [];
+
+        async function loadCatalogList() {
+            try {
+                const r = await fetch('/catalog', { headers: { 'Accept': 'application/json' } });
+                if (r.ok) catalogList = (await r.json()).map(c => ({ id: c.id, canonical_name: c.canonical_name }));
+            } catch (e) { /* katalóg nedostupný — párovanie sa proste nezobrazí */ }
+        }
+
+        function catNameById(id) {
+            const c = catalogList.find(x => x.id == id);
+            return c ? c.canonical_name : '';
+        }
+
+        function catOptions(selectedId) {
+            let opts = '<option value="">— nespárovať —</option>';
+            for (const c of catalogList) {
+                opts += `<option value="${c.id}" ${c.id == selectedId ? 'selected' : ''}>${esc(c.canonical_name)}</option>`;
+            }
+            return opts;
+        }
+
+        function catControlHtml(catalogId, catalogName) {
+            const matched = !!catalogId;
+            const name = catalogName || (catalogId ? catNameById(catalogId) : '');
+            const badge = matched
+                ? `<span class="cat-badge matched">→ ${esc(name || 'v katalógu')}</span>`
+                : `<span class="cat-badge unmatched">nie je v katalógu</span>`;
+            const addBtn = matched
+                ? ''
+                : `<button type="button" class="cat-add-btn" onclick="openCatAdd(this)">+ Pridať do katalógu</button>`;
+            return `${badge}
+                <select class="cat-select" onchange="onCatSelect(this)">${catOptions(catalogId || '')}</select>
+                ${addBtn}`;
+        }
+
+        function refreshCatLink(row) {
+            const link = row.querySelector('.cat-link');
+            if (!link) return;
+            const id = row.dataset.catalogId || '';
+            link.innerHTML = catControlHtml(id ? parseInt(id) : null, null);
+        }
+
+        // catalog_id z riadku — len pre liekové eventy
+        function rowCatalogId(row) {
+            const isLiek = row.querySelector('.input-type').value === 'liek';
+            return (isLiek && row.dataset.catalogId) ? parseInt(row.dataset.catalogId) : null;
+        }
+
+        function onTypeChange(sel) {
+            sel.className = 'input-type badge-' + sel.value;
+            const row = sel.closest('.event-item');
+            const link = row.querySelector('.cat-link');
+            if (link) link.style.display = sel.value === 'liek' ? '' : 'none';
+            const form = row.querySelector('.cat-addform');
+            if (form && sel.value !== 'liek') form.remove();
+        }
+
+        function onCatSelect(sel) {
+            const row = sel.closest('.event-item');
+            row.dataset.catalogId = sel.value || '';
+            const form = row.querySelector('.cat-addform');
+            if (form) form.remove();
+            refreshCatLink(row);
+        }
+
+        function openCatAdd(btn) {
+            const row = btn.closest('.event-item');
+            const existing = row.querySelector('.cat-addform');
+            if (existing) { existing.remove(); return; }   // toggle
+            const link = row.querySelector('.cat-link');
+            const medName = link.dataset.medName || '';
+            const value = row.querySelector('.input-value').value.trim();
+            const prefillName = medName || value;
+            const aliasPrefill = (value && value !== prefillName) ? value : '';
+            const form = document.createElement('div');
+            form.className = 'cat-addform';
+            form.innerHTML = `
+                <div class="lbl">Nový liek do katalógu</div>
+                <div class="r"><input class="ca-name" placeholder="Kanonický názov" value="${esc(prefillName)}"></div>
+                <div class="r">
+                    <select class="ca-kind">
+                        <option value="liek">liek</option>
+                        <option value="vitamin">vitamín</option>
+                        <option value="doplnok">doplnok</option>
+                    </select>
+                    <input class="ca-alias" placeholder="alias (voliteľné)" value="${esc(aliasPrefill)}">
                 </div>
-            `).join('');
+                <div class="acts">
+                    <button type="button" onclick="saveCatAdd(this)">Uložiť do katalógu</button>
+                    <button type="button" class="btn-ghost" onclick="this.closest('.cat-addform').remove()">Zrušiť</button>
+                </div>`;
+            row.appendChild(form);
+            form.querySelector('.ca-name').focus();
+        }
+
+        async function saveCatAdd(btn) {
+            const form = btn.closest('.cat-addform');
+            const row = form.closest('.event-item');
+            const name = form.querySelector('.ca-name').value.trim();
+            if (!name) return alert('Zadaj kanonický názov');
+            const kind = form.querySelector('.ca-kind').value;
+            const aliasRaw = form.querySelector('.ca-alias').value.trim();
+            const aliases = aliasRaw ? [aliasRaw] : [];
+            const medName = row.querySelector('.cat-link').dataset.medName || '';
+            if (medName && medName !== name && !aliases.includes(medName)) aliases.push(medName);
+            btn.disabled = true;
+            try {
+                const resp = await fetch('/catalog', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                    body: JSON.stringify({ canonical_name: name, kind, aliases })
+                });
+                if (resp.status === 401) { location.href = '/login'; return; }
+                if (!resp.ok) throw new Error(await resp.text());
+                const { id } = await resp.json();
+                catalogList.push({ id, canonical_name: name });
+                catalogList.sort((a, b) => a.canonical_name.localeCompare(b.canonical_name, 'sk', { sensitivity: 'base' }));
+                row.dataset.catalogId = String(id);
+                form.remove();
+                refreshCatLink(row);
+            } catch (e) {
+                alert('Chyba: ' + e.message);
+                btn.disabled = false;
+            }
         }
 
         function renderEventList(events) {
@@ -723,6 +879,7 @@
                 event_type: row.querySelector('.input-type').value,
                 value:      row.querySelector('.input-value').value.trim(),
                 note:       row.querySelector('.input-note').value.trim() || null,
+                catalog_id: rowCatalogId(row),
             })).filter(ev => ev.value);
         }
 
@@ -821,6 +978,7 @@
                     <span class="badge badge-${ev.event_type}">${TYPE_LABELS[ev.event_type] || ev.event_type}</span>
                     ${ev.event_time ? `<span class="ev-t">${esc(ev.event_time)}</span>` : ''}
                     <span>${esc(ev.value)}</span>
+                    ${ev.catalog_name ? `<span class="ev-cat">→ ${esc(ev.catalog_name)}</span>` : ''}
                     ${ev.note ? `<span class="ev-n">— ${esc(ev.note)}</span>` : ''}
                 </span>`
             ).join('');
@@ -916,6 +1074,7 @@
                         <span class="ev-row-time">${esc(ev.event_time || '—')}</span>
                         <span class="badge badge-${ev.event_type}">${TYPE_LABELS[ev.event_type] || ev.event_type}</span>
                         <span class="ev-row-val">${esc(ev.value)}</span>
+                        ${ev.catalog_name ? `<span class="ev-cat">→ ${esc(ev.catalog_name)}</span>` : ''}
                         ${ev.note ? `<span class="ev-n">— ${esc(ev.note)}</span>` : ''}
                     </div>
                 `).join('')}
@@ -1058,6 +1217,7 @@
             renderList();
         }
 
+        loadCatalogList();
         loadEntries();
         renderTypeChips();
 
