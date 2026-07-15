@@ -67,12 +67,25 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 
 - OneDrive ako druhý backup cieľ
 - Režim liekov Fáza 1 (evidencia) — HOTOVÉ; Fáza 2 (porovnanie eventov s režimom, detekcia odchýlok) — odložené
+- Katalóg Krok 2: foto krabičky + Claude vision autofill (photo_path stĺpec pripravený)
+- Napojenie /catalog/lookup na LLM extrakciu eventov (normalizácia názvov pri zápise)
+- Trvalé testy (tests/test_api.py) — zvážiť pri Fáze 2 liekov
+- datetime.utcnow() deprecated — nahradiť pri väčšom zásahu do database.py
 
 ## Poznámky / pasce
 
 - Windows git neukladá execute bit — pri nových shell skriptoch treba `git update-index --chmod=+x` pred commitom
+- ŠÚKL: kategorizačný zoznam (data.gov.sk) obsahuje len hradené lieky — Tisercin tam nie je. Plný register + PIL sú za JavaScript SPA (vyžadovalo by Playwright). Preto katalóg staviame na foto+vision, nie na registri.
 
 ## Changelog
+
+### 2026-07-15
+- Katalóg liekov (/catalog): referenčná príručka liekov s aliasmi pre normalizáciu názvov z diktovania (Orfiril/Ofriril/Ofriliril → Orfiril Long)
+- Tabuľka med_catalog: canonical_name, aliases (JSON), kind, strength, form, manufacturer, sukl_code, atc_code, description, side_effects, personal_notes (pozorovania u syna, oddelene od generického popisu), info_source, photo_path
+- GET /catalog/lookup?name=X — normalizácia názvov (case-insensitive, trim, len aktívne)
+- Seed: 6 liekov / 14 aliasov z reálnych dát
+- Security: odstránené natvrdo zadané heslá z main.py (_init_users), vytváranie užívateľov presunuté do manage_users.py add-user; produkčné heslá zmenené
+- Chore: .gitattributes — koniec CRLF warningov
 
 ### 2026-07-13
 - Sekcia Lieky (/meds): editovateľný režim liekov syna, odkaz v hlavičke
