@@ -28,6 +28,10 @@
         label { font-size: 13px; color: #555; display: block; margin-bottom: 4px; }
         #status { font-size: 13px; color: green; margin-top: 8px; display: none; }
         .textarea-row { position: relative; }
+        /* Rezervuj spodný pruh v textarea, aby text nikdy nešiel pod tlačidlá
+           (Foto/Diktovať sú absolútne v pravom dolnom rohu). Platí len pre
+           entry textarea vo .textarea-row — ostatné textarea ostávajú 8px. */
+        .textarea-row .auto-textarea { padding-bottom: 44px; }
         .textarea-btns { position: absolute; bottom: 8px; right: 8px; display: flex; gap: 6px; }
         #dictBtn, #photoBtn { padding: 4px 10px; font-size: 12px; background: #444; border-radius: 4px; color: #fff; border: none; cursor: pointer; }
         #dictBtn.active { background: #c00; }
