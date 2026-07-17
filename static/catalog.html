@@ -98,6 +98,35 @@
 
         .empty-state { text-align: center; padding: 40px 16px; color: #9ca3af; font-size: 14px; }
         .status-bar { display: none; background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; border-radius: 6px; padding: 8px 12px; font-size: 13px; margin-bottom: 12px; }
+
+        /* ── Foto sken ───────────────────────────────────────────────────── */
+        .scan-box { border: 1px dashed #cbd5e1; border-radius: 8px; padding: 10px; margin-bottom: 14px; background: #fff; }
+        .scan-btn { width: 100%; background: #1e40af; }
+        .scan-btn:disabled { opacity: 0.6; }
+        .scan-hint { font-size: 11px; color: #9ca3af; margin-top: 6px; text-align: center; }
+        .scan-preview { margin-top: 10px; text-align: center; }
+        .scan-preview img { max-width: 100%; max-height: 180px; border-radius: 6px; border: 1px solid #e5e7eb; cursor: zoom-in; }
+        .scan-loading { display: flex; align-items: center; gap: 8px; justify-content: center; font-size: 13px; color: #1e40af; margin-top: 8px; }
+        .spinner { width: 16px; height: 16px; border: 2px solid #bfdbfe; border-top-color: #1e40af; border-radius: 50%; animation: spin 0.7s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        /* zvýraznenie polí predvyplnených z fotky */
+        @keyframes fromphoto { 0% { background: #dbeafe; } 100% { background: #fff; } }
+        .field-fromphoto { animation: fromphoto 3s ease-out; }
+
+        /* ── Foto v inline editore + detaile ─────────────────────────────── */
+        .ie-photo { margin-bottom: 10px; text-align: center; }
+        .ie-photo img { max-width: 100%; max-height: 160px; border-radius: 6px; border: 1px solid #e5e7eb; cursor: zoom-in; }
+        .cat-photo-lg { margin-top: 8px; }
+        .cat-photo-lg img { max-width: 100%; max-height: 220px; border-radius: 6px; border: 1px solid #e5e7eb; cursor: zoom-in; }
+
+        /* ── Lightbox ────────────────────────────────────────────────────── */
+        #photoOverlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.88);
+            align-items: center; justify-content: center;
+            z-index: 1000; cursor: zoom-out;
+        }
+        #photoOverlay img { max-width: 95vw; max-height: 95vh; border-radius: 6px; cursor: default; }
     </style>
 </head>
 <body>
@@ -122,6 +151,16 @@
         <div class="layout-left">
             <div class="form-panel">
                 <h2>Pridať do katalógu</h2>
+
+                <div class="scan-box">
+                    <button type="button" class="scan-btn" id="scanBtn" onclick="document.getElementById('scanInput').click()">📷 Odfotiť krabičku</button>
+                    <input type="file" id="scanInput" accept="image/*" capture="environment" style="display:none" onchange="scanPhoto(this)">
+                    <div class="scan-hint">Vision prečíta názov, silu, formu, výrobcu a kódy z krabičky</div>
+                    <div class="scan-loading" id="scanLoading" style="display:none">
+                        <span class="spinner"></span> Čítam údaje z fotky…
+                    </div>
+                    <div class="scan-preview" id="scanPreview"></div>
+                </div>
 
                 <div class="form-group">
                     <label>Kanonický názov <span style="color:#e53e3e">*</span></label>
@@ -211,11 +250,18 @@
     </div>
 </div>
 
+<!-- ── Lightbox ──────────────────────────────────────────────────────────── -->
+<div id="photoOverlay" onclick="closePhoto()">
+    <img id="photoOverlayImg" src="" onclick="event.stopPropagation()" alt="">
+</div>
+
 <script>
     let items = [];
     let editingId = null;
     let expandedId = null;
     let showInactive = false;
+    let pendingPhotoPath = null;   // fotka nascanovana pre NOVY liek (este neulozeny)
+    let editPhotoPath = null;      // fotka pridana/vymenena v inline editore
 
     const KIND_LABELS = { liek: 'liek', vitamin: 'vitamín', doplnok: 'doplnok' };
 
@@ -234,6 +280,64 @@
 
     function thumbUrl(photo_path) {
         return '/photos/' + esc(String(photo_path).replace('uploads/', ''));
+    }
+
+    // ── Lightbox ───────────────────────────────────────────────────────────────
+    function openPhoto(src) {
+        document.getElementById('photoOverlayImg').src = src;
+        document.getElementById('photoOverlay').style.display = 'flex';
+    }
+    function closePhoto() {
+        document.getElementById('photoOverlay').style.display = 'none';
+        document.getElementById('photoOverlayImg').src = '';
+    }
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closePhoto(); });
+
+    // ── Foto sken (nový liek) ──────────────────────────────────────────────────
+    async function scanPhoto(input) {
+        const fileEl = input.files && input.files[0];
+        if (!fileEl) return;
+        const btn = document.getElementById('scanBtn');
+        const loading = document.getElementById('scanLoading');
+        btn.disabled = true;
+        loading.style.display = 'flex';
+        try {
+            const fd = new FormData();
+            fd.append('file', fileEl);
+            const resp = await fetch('/catalog/scan', { method: 'POST', body: fd });
+            if (resp.status === 401) { location.href = '/login'; return; }
+            if (!resp.ok) throw new Error(await resp.text());
+            const data = await resp.json();
+            pendingPhotoPath = data.photo_path;
+            // náhľad fotky
+            document.getElementById('scanPreview').innerHTML =
+                `<img src="${thumbUrl(data.photo_path)}" onclick="openPhoto(this.src)" alt="krabička">`;
+            // predvyplň polia (len tie čo prišli z fotky, nič neprepisuj null-om)
+            const f = data.fields || {};
+            fillFromPhoto('fName', f.name);
+            fillFromPhoto('fStrength', f.strength);
+            fillFromPhoto('fForm', f.form);
+            fillFromPhoto('fManufacturer', f.manufacturer);
+            fillFromPhoto('fSukl', f.sukl_code);
+            fillFromPhoto('fAtc', f.atc_code);
+            const read = Object.values(f).filter(Boolean).length;
+            showStatus(read ? `Prečítané z fotky (${read} polí)` : 'Z fotky sa nič nedalo prečítať');
+        } catch (e) {
+            alert('Chyba skenu: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            loading.style.display = 'none';
+            input.value = '';   // umožni znovu vybrať tú istú fotku
+        }
+    }
+
+    function fillFromPhoto(fieldId, value) {
+        if (!value) return;   // nečitateľné → nechaj prázdne, nič nevymýšľaj
+        const el = document.getElementById(fieldId);
+        el.value = value;
+        el.classList.remove('field-fromphoto');
+        void el.offsetWidth;               // reštart animácie
+        el.classList.add('field-fromphoto');
     }
 
     // ── Load & render ────────────────────────────────────────────────────────
@@ -271,7 +375,7 @@
 
         const isOpen = expandedId === i.id;
         const thumb = i.photo_path
-            ? `<img class="cat-thumb" src="${thumbUrl(i.photo_path)}" onclick="window.open(this.src)" loading="lazy" alt="">`
+            ? `<img class="cat-thumb" src="${thumbUrl(i.photo_path)}" onclick="event.stopPropagation(); openPhoto(this.src)" loading="lazy" alt="">`
             : '';
 
         return `
@@ -306,6 +410,8 @@
         if (i.atc_code)  codes.push(`<span class="cat-sub-item"><span class="cat-sub-label">ATC</span> ${esc(i.atc_code)}</span>`);
         if (codes.length) blocks.push(`<div class="cat-detail-block"><div class="cat-sub">${codes.join('')}</div></div>`);
         if (i.info_source) blocks.push(`<div class="cat-detail-block"><div class="dl">Zdroj</div><div class="dv">${esc(i.info_source)}</div></div>`);
+        if (i.photo_path) blocks.push(`<div class="cat-detail-block"><div class="dl">Foto krabičky</div>
+            <div class="cat-photo-lg"><img src="${thumbUrl(i.photo_path)}" onclick="openPhoto(this.src)" loading="lazy" alt="krabička"></div></div>`);
 
         return `<div class="cat-detail">
             ${blocks.join('') || '<div style="color:#9ca3af">Žiadne ďalšie detaily.</div>'}
@@ -324,6 +430,14 @@
         return `
         <div class="cat-card editing" id="cat-${i.id}">
             <div class="inline-edit">
+                <div class="ie-photo" id="ie-photo-block">
+                    ${i.photo_path ? `<img src="${thumbUrl(i.photo_path)}" onclick="openPhoto(this.src)" alt="krabička">` : ''}
+                </div>
+                <div class="form-group">
+                    <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('ie-scan-input').click()">📷 ${i.photo_path ? 'Vymeniť' : 'Pridať'} fotku</button>
+                    <input type="file" id="ie-scan-input" accept="image/*" capture="environment" style="display:none" onchange="scanEditPhoto(this)">
+                    <span class="scan-loading" id="ie-scan-loading" style="display:none"><span class="spinner"></span> Čítam…</span>
+                </div>
                 <div class="form-group">
                     <label>Kanonický názov <span style="color:#e53e3e">*</span></label>
                     <input type="text" id="ie-name" value="${esc(i.canonical_name)}">
@@ -366,9 +480,48 @@
 
     function startEdit(id) {
         editingId = id;
+        editPhotoPath = items.find(x => x.id === id)?.photo_path || null;
         renderCatalog();
         document.getElementById('cat-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         document.getElementById('ie-name')?.focus();
+    }
+
+    // Foto sken v inline editore — pridá/vymení fotku, autofill LEN ako návrh
+    async function scanEditPhoto(input) {
+        const fileEl = input.files && input.files[0];
+        if (!fileEl) return;
+        const loading = document.getElementById('ie-scan-loading');
+        loading.style.display = 'inline-flex';
+        try {
+            const fd = new FormData();
+            fd.append('file', fileEl);
+            const resp = await fetch('/catalog/scan', { method: 'POST', body: fd });
+            if (resp.status === 401) { location.href = '/login'; return; }
+            if (!resp.ok) throw new Error(await resp.text());
+            const data = await resp.json();
+            editPhotoPath = data.photo_path;
+            document.getElementById('ie-photo-block').innerHTML =
+                `<img src="${thumbUrl(data.photo_path)}" onclick="openPhoto(this.src)" alt="krabička">`;
+            // autofill LEN prázdnych polí a LEN po potvrdení (existujúce needituj)
+            const f = data.fields || {};
+            const map = { 'ie-name': f.name, 'ie-strength': f.strength, 'ie-form': f.form,
+                          'ie-manufacturer': f.manufacturer, 'ie-sukl': f.sukl_code, 'ie-atc': f.atc_code };
+            const emptyReadable = Object.entries(map).filter(([id, v]) => v && !document.getElementById(id).value.trim());
+            if (emptyReadable.length &&
+                confirm(`Predvyplniť ${emptyReadable.length} prázdnych polí z fotky? Existujúce hodnoty ostanú nezmenené.`)) {
+                emptyReadable.forEach(([id, v]) => {
+                    const el = document.getElementById(id);
+                    el.value = v;
+                    el.classList.remove('field-fromphoto'); void el.offsetWidth; el.classList.add('field-fromphoto');
+                });
+            }
+            showStatus('Fotka pridaná');
+        } catch (e) {
+            alert('Chyba skenu: ' + e.message);
+        } finally {
+            loading.style.display = 'none';
+            input.value = '';
+        }
     }
 
     function cancelEdit() {
@@ -391,6 +544,7 @@
             side_effects: val('ie-side') || null,
             personal_notes: val('ie-notes') || null,
             info_source: val('ie-source') || null,
+            photo_path: editPhotoPath,
         };
     }
 
@@ -414,6 +568,8 @@
         const val = id => document.getElementById(id).value.trim();
         const name = val('fName');
         if (!name) return alert('Kanonický názov je povinný');
+        // ak z fotky prišiel zdroj = photo, inak zachovaj ručne zadaný zdroj
+        const infoSource = val('fSource') || (pendingPhotoPath ? 'photo' : null);
         const body = {
             canonical_name: name,
             aliases: parseAliases(val('fAliases')),
@@ -426,7 +582,8 @@
             description: val('fDescription') || null,
             side_effects: val('fSideEffects') || null,
             personal_notes: val('fNotes') || null,
-            info_source: val('fSource') || null,
+            info_source: infoSource,
+            photo_path: pendingPhotoPath,
         };
         const btn = document.getElementById('saveBtn');
         btn.disabled = true; btn.textContent = 'Ukladám…';
@@ -440,6 +597,8 @@
             ['fName','fStrength','fForm','fManufacturer','fAliases','fSukl','fAtc',
              'fDescription','fSideEffects','fNotes','fSource'].forEach(id => document.getElementById(id).value = '');
             document.getElementById('fKind').value = 'liek';
+            pendingPhotoPath = null;
+            document.getElementById('scanPreview').innerHTML = '';
             showStatus('Pridané do katalógu');
             loadCatalog();
         } catch(e) {

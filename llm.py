@@ -122,6 +122,61 @@ TRANSCRIBE_PROMPT = (
 )
 
 
+SCAN_MED_PROMPT = (
+    "Na obrázku je krabička lieku (alebo vitamínu/doplnku). Prečítaj text z krabičky "
+    "a vráť tieto údaje. ČÍTAJ IBA to, čo je reálne na obrázku — nič nedopĺňaj z vlastných "
+    "znalostí, nehádaj. Ak údaj nie je čitateľný alebo nie je prítomný, vráť pre neho null.\n"
+    "Polia:\n"
+    "  name — názov lieku ako je na krabičke\n"
+    "  strength — sila (napr. \"300 mg\", \"50 mg/ml\"), inak null\n"
+    "  form — lieková forma (tableta/kapsula/kvapky/sirup/mast...), inak null\n"
+    "  manufacturer — výrobca alebo držiteľ registrácie, inak null\n"
+    "  sukl_code — ŠÚKL kód ak je viditeľný, inak null\n"
+    "  atc_code — ATC kód ak je viditeľný, inak null\n"
+    "  package_info — veľkosť balenia (napr. \"100 tabliet\"), inak null\n"
+    'Vráť iba JSON objekt bez iného textu: '
+    '{"name": ..., "strength": ..., "form": ..., "manufacturer": ..., '
+    '"sukl_code": ..., "atc_code": ..., "package_info": ...}'
+)
+
+_SCAN_FIELDS = ("name", "strength", "form", "manufacturer", "sukl_code", "atc_code", "package_info")
+
+
+def scan_med_package(image_bytes: bytes) -> dict:
+    """Prečíta údaje z fotky krabičky lieku cez Claude vision. Číta len text
+    z obrázka — nečitateľné/chýbajúce polia vráti ako null (nehádaj)."""
+    client = _get_client()
+    resized = _resize_for_api(image_bytes)
+    b64 = base64.standard_b64encode(resized).decode()
+
+    response = client.messages.create(
+        model=MODEL_NAME,
+        max_tokens=512,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}},
+                {"type": "text", "text": SCAN_MED_PROMPT},
+            ]
+        }]
+    )
+
+    raw = response.content[0].text.strip()
+    parsed = _parse_llm_json(raw, "")
+    if not isinstance(parsed, dict):
+        parsed = {}
+    # normalizuj — len povolené polia, prázdne/"null" reťazce → None
+    fields = {}
+    for key in _SCAN_FIELDS:
+        val = parsed.get(key)
+        if isinstance(val, str):
+            val = val.strip()
+            if val == "" or val.lower() == "null":
+                val = None
+        fields[key] = val
+    return {"fields": fields, "raw": raw}
+
+
 def transcribe_photo(image_bytes: bytes) -> dict:
     client = _get_client()
     resized = _resize_for_api(image_bytes)

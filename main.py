@@ -19,7 +19,7 @@ from database import (
     delete_catalog_item, set_catalog_active, find_by_alias
 )
 from auth import verify_password, create_session_token, decode_session_token
-from llm import extract_events, transcribe_photo
+from llm import extract_events, transcribe_photo, scan_med_package
 
 UPLOAD_DIR = pathlib.Path("uploads")
 app = FastAPI()
@@ -437,6 +437,27 @@ def catalog_lookup(name: str, user=Depends(require_auth)):
     if not item:
         return {"match": None}
     return {"match": _catalog_out(item)}
+
+
+@app.post("/catalog/scan")
+async def catalog_scan(file: UploadFile = File(...), user=Depends(require_auth)):
+    """Odfotená krabička lieku → Claude vision prečíta údaje. Nič neukladá do
+    katalógu — vráti len návrh polí + cestu k uloženej fotke."""
+    UPLOAD_DIR.mkdir(exist_ok=True)
+    contents = await file.read()
+    ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    filename = f"{ts}_med_{user['username']}.jpg"
+    with open(UPLOAD_DIR / filename, "wb") as f:
+        f.write(contents)
+    try:
+        result = scan_med_package(contents)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Chyba skenu: {e}")
+    return {
+        "fields": result["fields"],
+        "raw": result["raw"],
+        "photo_path": f"uploads/{filename}",
+    }
 
 
 @app.put("/catalog/{item_id}")
