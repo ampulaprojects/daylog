@@ -391,14 +391,22 @@ class CatalogBody(BaseModel):
     personal_notes: Optional[str] = None
     info_source: Optional[str] = None
     photo_path: Optional[str] = None
+    photos: List[str] = []
 
 
 def _catalog_out(item: dict) -> dict:
-    """Parse the aliases JSON column into a real list for the client."""
+    """Parse the aliases/photos JSON columns into real lists for the client."""
     try:
         item["aliases"] = json.loads(item.get("aliases") or "[]")
     except (ValueError, TypeError):
         item["aliases"] = []
+    try:
+        item["photos"] = json.loads(item.get("photos") or "[]")
+    except (ValueError, TypeError):
+        item["photos"] = []
+    # spätná kompatibilita: ak má liek len photo_path a prázdne photos, zobraz ho v galérii
+    if not item["photos"] and item.get("photo_path"):
+        item["photos"] = [item["photo_path"]]
     return item
 
 
@@ -418,15 +426,28 @@ def catalog_root(include_inactive: bool = False,
     return FileResponse("static/catalog.html")
 
 
+def _resolve_photos(body: CatalogBody):
+    """Zjednoť photos (galéria) a photo_path (hlavná/thumbnail).
+    Hlavná musí byť v galérii; ak galéria prázdna, použi photo_path."""
+    photos = list(body.photos or [])
+    photo_path = body.photo_path
+    if photo_path and photo_path not in photos:
+        photos.insert(0, photo_path)
+    if not photo_path and photos:
+        photo_path = photos[0]
+    return photo_path, json.dumps(photos)
+
+
 @app.post("/catalog", status_code=201)
 def add_catalog(body: CatalogBody, user=Depends(require_auth)):
+    photo_path, photos_json = _resolve_photos(body)
     item_id = create_catalog_item(
         canonical_name=body.canonical_name, aliases=json.dumps(body.aliases),
         kind=body.kind, strength=body.strength, form=body.form,
         manufacturer=body.manufacturer, sukl_code=body.sukl_code,
         atc_code=body.atc_code, description=body.description,
         side_effects=body.side_effects, personal_notes=body.personal_notes,
-        info_source=body.info_source, photo_path=body.photo_path
+        info_source=body.info_source, photo_path=photo_path, photos=photos_json
     )
     return {"id": item_id}
 
@@ -440,23 +461,29 @@ def catalog_lookup(name: str, user=Depends(require_auth)):
 
 
 @app.post("/catalog/scan")
-async def catalog_scan(file: UploadFile = File(...), user=Depends(require_auth)):
-    """Odfotená krabička lieku → Claude vision prečíta údaje. Nič neukladá do
-    katalógu — vráti len návrh polí + cestu k uloženej fotke."""
+async def catalog_scan(files: List[UploadFile] = File(...), user=Depends(require_auth)):
+    """Odfotené krabičky lieku (jedna alebo viac strán) → Claude vision prečíta
+    a zlúči údaje. Nič neukladá do katalógu — vráti len návrh polí + cesty k fotkám."""
     UPLOAD_DIR.mkdir(exist_ok=True)
-    contents = await file.read()
+    photos = []
+    images = []
     ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    filename = f"{ts}_med_{user['username']}.jpg"
-    with open(UPLOAD_DIR / filename, "wb") as f:
-        f.write(contents)
+    for i, file in enumerate(files):
+        contents = await file.read()
+        filename = f"{ts}_med_{user['username']}_{i}.jpg"
+        with open(UPLOAD_DIR / filename, "wb") as f:
+            f.write(contents)
+        photos.append(f"uploads/{filename}")
+        images.append(contents)
     try:
-        result = scan_med_package(contents)
+        result = scan_med_package(images)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Chyba skenu: {e}")
     return {
         "fields": result["fields"],
         "raw": result["raw"],
-        "photo_path": f"uploads/{filename}",
+        "photos": photos,
+        "photo_path": photos[0] if photos else None,
     }
 
 
@@ -464,13 +491,14 @@ async def catalog_scan(file: UploadFile = File(...), user=Depends(require_auth))
 def edit_catalog(item_id: int, body: CatalogBody, user=Depends(require_auth)):
     if not get_catalog_item(item_id):
         raise HTTPException(status_code=404, detail="Položka nenájdená")
+    photo_path, photos_json = _resolve_photos(body)
     update_catalog_item(
         item_id=item_id, canonical_name=body.canonical_name,
         aliases=json.dumps(body.aliases), kind=body.kind, strength=body.strength,
         form=body.form, manufacturer=body.manufacturer, sukl_code=body.sukl_code,
         atc_code=body.atc_code, description=body.description,
         side_effects=body.side_effects, personal_notes=body.personal_notes,
-        info_source=body.info_source, photo_path=body.photo_path
+        info_source=body.info_source, photo_path=photo_path, photos=photos_json
     )
     return {"id": item_id}
 

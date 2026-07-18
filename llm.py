@@ -123,9 +123,12 @@ TRANSCRIBE_PROMPT = (
 
 
 SCAN_MED_PROMPT = (
-    "Na obrázku je krabička lieku (alebo vitamínu/doplnku). Prečítaj text z krabičky "
-    "a vráť tieto údaje. ČÍTAJ IBA to, čo je reálne na obrázku — nič nedopĺňaj z vlastných "
-    "znalostí, nehádaj. Ak údaj nie je čitateľný alebo nie je prítomný, vráť pre neho null.\n"
+    "Na obrázku (alebo na viacerých obrázkoch) je tá istá krabička lieku "
+    "(alebo vitamínu/doplnku) — môžu to byť rôzne strany tej istej krabičky. "
+    "Prečítaj text zo VŠETKÝCH obrázkov a ZLÚČ údaje do jedného výsledku "
+    "(napr. názov z prednej strany, registračné číslo z bočnej, zloženie z ďalšej). "
+    "ČÍTAJ IBA to, čo je reálne na obrázkoch — nič nedopĺňaj z vlastných "
+    "znalostí, nehádaj. Ak údaj nie je čitateľný ani na jednom obrázku, vráť pre neho null.\n"
     "Polia:\n"
     "  name — názov lieku ako je na krabičke\n"
     "  strength — sila (napr. \"300 mg\", \"50 mg/ml\"), inak null\n"
@@ -142,23 +145,27 @@ SCAN_MED_PROMPT = (
 _SCAN_FIELDS = ("name", "strength", "form", "manufacturer", "sukl_code", "atc_code", "package_info")
 
 
-def scan_med_package(image_bytes: bytes) -> dict:
-    """Prečíta údaje z fotky krabičky lieku cez Claude vision. Číta len text
-    z obrázka — nečitateľné/chýbajúce polia vráti ako null (nehádaj)."""
+def scan_med_package(images) -> dict:
+    """Prečíta údaje z fotiek krabičky lieku cez Claude vision. Prijme jeden
+    obrázok (bytes) alebo zoznam obrázkov (rôzne strany tej istej krabičky) —
+    v jednom volaní ich zlúči. Číta len text z obrázkov — nečitateľné/chýbajúce
+    polia vráti ako null (nehádaj)."""
+    if isinstance(images, (bytes, bytearray)):
+        images = [images]
     client = _get_client()
-    resized = _resize_for_api(image_bytes)
-    b64 = base64.standard_b64encode(resized).decode()
+
+    content = []
+    for img_bytes in images:
+        resized = _resize_for_api(img_bytes)
+        b64 = base64.standard_b64encode(resized).decode()
+        content.append({"type": "image",
+                        "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}})
+    content.append({"type": "text", "text": SCAN_MED_PROMPT})
 
     response = client.messages.create(
         model=MODEL_NAME,
         max_tokens=512,
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}},
-                {"type": "text", "text": SCAN_MED_PROMPT},
-            ]
-        }]
+        messages=[{"role": "user", "content": content}]
     )
 
     raw = response.content[0].text.strip()

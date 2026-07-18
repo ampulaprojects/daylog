@@ -104,9 +104,19 @@
         .scan-btn { width: 100%; background: #1e40af; }
         .scan-btn:disabled { opacity: 0.6; }
         .scan-hint { font-size: 11px; color: #9ca3af; margin-top: 6px; text-align: center; }
-        .scan-preview { margin-top: 10px; text-align: center; }
-        .scan-preview img { max-width: 100%; max-height: 180px; border-radius: 6px; border: 1px solid #e5e7eb; cursor: zoom-in; }
+        .scan-preview { margin-top: 10px; }
         .scan-loading { display: flex; align-items: center; gap: 8px; justify-content: center; font-size: 13px; color: #1e40af; margin-top: 8px; }
+
+        /* ── Photo strip (náhľady viacerých fotiek) ──────────────────────── */
+        .photo-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+        .photo-thumb-wrap { position: relative; width: 72px; }
+        .photo-thumb { width: 72px; height: 72px; object-fit: cover; border-radius: 6px; border: 1px solid #e5e7eb; cursor: zoom-in; display: block; }
+        .photo-thumb-wrap.main .photo-thumb { border: 2px solid #2563eb; }
+        .photo-main-badge { position: absolute; top: -6px; left: -6px; background: #2563eb; color: #fff; font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 8px; }
+        .photo-ctrls { display: flex; justify-content: center; gap: 4px; margin-top: 3px; }
+        .photo-ctrl { font-size: 10px; padding: 1px 5px; border-radius: 3px; border: 1px solid #e5e7eb; background: #fff; color: #6b7280; cursor: pointer; }
+        .photo-ctrl:hover { background: #f3f4f6; color: #111; }
+        .photo-ctrl.del:hover { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
         .spinner { width: 16px; height: 16px; border: 2px solid #bfdbfe; border-top-color: #1e40af; border-radius: 50%; animation: spin 0.7s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
         /* zvýraznenie polí predvyplnených z fotky */
@@ -153,11 +163,11 @@
                 <h2>Pridať do katalógu</h2>
 
                 <div class="scan-box">
-                    <button type="button" class="scan-btn" id="scanBtn" onclick="document.getElementById('scanInput').click()">📷 Odfotiť krabičku</button>
-                    <input type="file" id="scanInput" accept="image/*" capture="environment" style="display:none" onchange="scanPhoto(this)">
-                    <div class="scan-hint">Vision prečíta názov, silu, formu, výrobcu a kódy z krabičky</div>
+                    <button type="button" class="scan-btn" id="scanBtn" onclick="document.getElementById('scanInput').click()">📷 Odfotiť/nahrať krabičku</button>
+                    <input type="file" id="scanInput" accept="image/*" multiple style="display:none" onchange="scanPhoto(this)">
+                    <div class="scan-hint">Môžeš vybrať viac fotiek (rôzne strany) — vision prečíta a zlúči údaje</div>
                     <div class="scan-loading" id="scanLoading" style="display:none">
-                        <span class="spinner"></span> Čítam údaje z fotky…
+                        <span class="spinner"></span> Čítam údaje z fotiek…
                     </div>
                     <div class="scan-preview" id="scanPreview"></div>
                 </div>
@@ -260,8 +270,10 @@
     let editingId = null;
     let expandedId = null;
     let showInactive = false;
-    let pendingPhotoPath = null;   // fotka nascanovana pre NOVY liek (este neulozeny)
-    let editPhotoPath = null;      // fotka pridana/vymenena v inline editore
+    let pendingPhotos = [];        // galéria fotiek pre NOVY liek (ešte neuložený)
+    let pendingPhotoPath = null;   // hlavná fotka (thumbnail) nového lieku
+    let editPhotos = [];           // galéria fotiek v inline editore
+    let editPhotoPath = null;      // hlavná fotka v inline editore
 
     const KIND_LABELS = { liek: 'liek', vitamin: 'vitamín', doplnok: 'doplnok' };
 
@@ -293,26 +305,44 @@
     }
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closePhoto(); });
 
+    // ── Shared photo strip renderer ────────────────────────────────────────────
+    // handlers: mená JS funkcií pre onclick (setMainFn, delFn) — '' = bez ovládača
+    function photoStripHtml(photos, mainPath, setMainFn, delFn) {
+        if (!photos || !photos.length) return '';
+        return photos.map(p => {
+            const isMain = p === mainPath;
+            const ctrls = [];
+            if (setMainFn && !isMain) ctrls.push(`<span class="photo-ctrl" onclick="${setMainFn}('${esc(p)}')">hlavná</span>`);
+            if (delFn) ctrls.push(`<span class="photo-ctrl del" onclick="${delFn}('${esc(p)}')">✕</span>`);
+            return `
+            <div class="photo-thumb-wrap ${isMain ? 'main' : ''}">
+                ${isMain ? '<span class="photo-main-badge">hlavná</span>' : ''}
+                <img class="photo-thumb" src="${thumbUrl(p)}" onclick="openPhoto(this.src)" loading="lazy" alt="">
+                ${ctrls.length ? `<div class="photo-ctrls">${ctrls.join('')}</div>` : ''}
+            </div>`;
+        }).join('');
+    }
+
     // ── Foto sken (nový liek) ──────────────────────────────────────────────────
     async function scanPhoto(input) {
-        const fileEl = input.files && input.files[0];
-        if (!fileEl) return;
+        const files = input.files;
+        if (!files || !files.length) return;
         const btn = document.getElementById('scanBtn');
         const loading = document.getElementById('scanLoading');
         btn.disabled = true;
         loading.style.display = 'flex';
         try {
             const fd = new FormData();
-            fd.append('file', fileEl);
+            for (const f of files) fd.append('files', f);
             const resp = await fetch('/catalog/scan', { method: 'POST', body: fd });
             if (resp.status === 401) { location.href = '/login'; return; }
             if (!resp.ok) throw new Error(await resp.text());
             const data = await resp.json();
-            pendingPhotoPath = data.photo_path;
-            // náhľad fotky
-            document.getElementById('scanPreview').innerHTML =
-                `<img src="${thumbUrl(data.photo_path)}" onclick="openPhoto(this.src)" alt="krabička">`;
-            // predvyplň polia (len tie čo prišli z fotky, nič neprepisuj null-om)
+            // pridaj nové fotky do galérie (append — umožní pridať ďalšie strany)
+            for (const p of (data.photos || [])) if (!pendingPhotos.includes(p)) pendingPhotos.push(p);
+            if (!pendingPhotoPath && pendingPhotos.length) pendingPhotoPath = pendingPhotos[0];
+            renderScanPreview();
+            // predvyplň polia zo zlúčeného výstupu (len prázdne needituj násilím? — vyplň čo prišlo)
             const f = data.fields || {};
             fillFromPhoto('fName', f.name);
             fillFromPhoto('fStrength', f.strength);
@@ -321,14 +351,26 @@
             fillFromPhoto('fSukl', f.sukl_code);
             fillFromPhoto('fAtc', f.atc_code);
             const read = Object.values(f).filter(Boolean).length;
-            showStatus(read ? `Prečítané z fotky (${read} polí)` : 'Z fotky sa nič nedalo prečítať');
+            showStatus(read ? `Prečítané z ${data.photos.length} fotiek (${read} polí)` : 'Z fotiek sa nič nedalo prečítať');
         } catch (e) {
             alert('Chyba skenu: ' + e.message);
         } finally {
             btn.disabled = false;
             loading.style.display = 'none';
-            input.value = '';   // umožni znovu vybrať tú istú fotku
+            input.value = '';   // umožni znovu vybrať tie isté fotky
         }
+    }
+
+    function renderScanPreview() {
+        document.getElementById('scanPreview').innerHTML = pendingPhotos.length
+            ? `<div class="photo-strip">${photoStripHtml(pendingPhotos, pendingPhotoPath, 'setPendingMain', 'removePendingPhoto')}</div>`
+            : '';
+    }
+    function setPendingMain(path) { pendingPhotoPath = path; renderScanPreview(); }
+    function removePendingPhoto(path) {
+        pendingPhotos = pendingPhotos.filter(p => p !== path);
+        if (pendingPhotoPath === path) pendingPhotoPath = pendingPhotos[0] || null;
+        renderScanPreview();
     }
 
     function fillFromPhoto(fieldId, value) {
@@ -410,8 +452,9 @@
         if (i.atc_code)  codes.push(`<span class="cat-sub-item"><span class="cat-sub-label">ATC</span> ${esc(i.atc_code)}</span>`);
         if (codes.length) blocks.push(`<div class="cat-detail-block"><div class="cat-sub">${codes.join('')}</div></div>`);
         if (i.info_source) blocks.push(`<div class="cat-detail-block"><div class="dl">Zdroj</div><div class="dv">${esc(i.info_source)}</div></div>`);
-        if (i.photo_path) blocks.push(`<div class="cat-detail-block"><div class="dl">Foto krabičky</div>
-            <div class="cat-photo-lg"><img src="${thumbUrl(i.photo_path)}" onclick="openPhoto(this.src)" loading="lazy" alt="krabička"></div></div>`);
+        const photos = (i.photos && i.photos.length) ? i.photos : (i.photo_path ? [i.photo_path] : []);
+        if (photos.length) blocks.push(`<div class="cat-detail-block"><div class="dl">Foto krabičky (${photos.length})</div>
+            <div class="photo-strip">${photoStripHtml(photos, i.photo_path, '', '')}</div></div>`);
 
         return `<div class="cat-detail">
             ${blocks.join('') || '<div style="color:#9ca3af">Žiadne ďalšie detaily.</div>'}
@@ -430,12 +473,10 @@
         return `
         <div class="cat-card editing" id="cat-${i.id}">
             <div class="inline-edit">
-                <div class="ie-photo" id="ie-photo-block">
-                    ${i.photo_path ? `<img src="${thumbUrl(i.photo_path)}" onclick="openPhoto(this.src)" alt="krabička">` : ''}
-                </div>
+                <div id="ie-photo-block">${editPhotoStripHtml()}</div>
                 <div class="form-group">
-                    <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('ie-scan-input').click()">📷 ${i.photo_path ? 'Vymeniť' : 'Pridať'} fotku</button>
-                    <input type="file" id="ie-scan-input" accept="image/*" capture="environment" style="display:none" onchange="scanEditPhoto(this)">
+                    <button type="button" class="btn-ghost btn-sm" onclick="document.getElementById('ie-scan-input').click()">📷 Pridať fotku(y)</button>
+                    <input type="file" id="ie-scan-input" accept="image/*" multiple style="display:none" onchange="scanEditPhoto(this)">
                     <span class="scan-loading" id="ie-scan-loading" style="display:none"><span class="spinner"></span> Čítam…</span>
                 </div>
                 <div class="form-group">
@@ -480,42 +521,61 @@
 
     function startEdit(id) {
         editingId = id;
-        editPhotoPath = items.find(x => x.id === id)?.photo_path || null;
+        const it = items.find(x => x.id === id);
+        editPhotos = (it && it.photos && it.photos.length) ? it.photos.slice()
+                     : (it && it.photo_path ? [it.photo_path] : []);
+        editPhotoPath = (it && it.photo_path) || (editPhotos[0] || null);
         renderCatalog();
         document.getElementById('cat-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         document.getElementById('ie-name')?.focus();
     }
 
-    // Foto sken v inline editore — pridá/vymení fotku, autofill LEN ako návrh
+    function editPhotoStripHtml() {
+        return editPhotos.length
+            ? `<div class="photo-strip">${photoStripHtml(editPhotos, editPhotoPath, 'setEditMain', 'removeEditPhoto')}</div>`
+            : '<div style="font-size:12px;color:#9ca3af;margin-bottom:6px">Žiadna fotka</div>';
+    }
+    function renderEditPhotos() {
+        const block = document.getElementById('ie-photo-block');
+        if (block) block.innerHTML = editPhotoStripHtml();
+    }
+    function setEditMain(path) { editPhotoPath = path; renderEditPhotos(); }
+    function removeEditPhoto(path) {
+        editPhotos = editPhotos.filter(p => p !== path);
+        if (editPhotoPath === path) editPhotoPath = editPhotos[0] || null;
+        renderEditPhotos();
+    }
+
+    // Foto sken v inline editore — pridá fotky (append), autofill LEN ako návrh
     async function scanEditPhoto(input) {
-        const fileEl = input.files && input.files[0];
-        if (!fileEl) return;
+        const files = input.files;
+        if (!files || !files.length) return;
         const loading = document.getElementById('ie-scan-loading');
         loading.style.display = 'inline-flex';
         try {
             const fd = new FormData();
-            fd.append('file', fileEl);
+            for (const f of files) fd.append('files', f);
             const resp = await fetch('/catalog/scan', { method: 'POST', body: fd });
             if (resp.status === 401) { location.href = '/login'; return; }
             if (!resp.ok) throw new Error(await resp.text());
             const data = await resp.json();
-            editPhotoPath = data.photo_path;
-            document.getElementById('ie-photo-block').innerHTML =
-                `<img src="${thumbUrl(data.photo_path)}" onclick="openPhoto(this.src)" alt="krabička">`;
+            for (const p of (data.photos || [])) if (!editPhotos.includes(p)) editPhotos.push(p);
+            if (!editPhotoPath && editPhotos.length) editPhotoPath = editPhotos[0];
+            renderEditPhotos();
             // autofill LEN prázdnych polí a LEN po potvrdení (existujúce needituj)
             const f = data.fields || {};
             const map = { 'ie-name': f.name, 'ie-strength': f.strength, 'ie-form': f.form,
                           'ie-manufacturer': f.manufacturer, 'ie-sukl': f.sukl_code, 'ie-atc': f.atc_code };
             const emptyReadable = Object.entries(map).filter(([id, v]) => v && !document.getElementById(id).value.trim());
             if (emptyReadable.length &&
-                confirm(`Predvyplniť ${emptyReadable.length} prázdnych polí z fotky? Existujúce hodnoty ostanú nezmenené.`)) {
+                confirm(`Predvyplniť ${emptyReadable.length} prázdnych polí z fotiek? Existujúce hodnoty ostanú nezmenené.`)) {
                 emptyReadable.forEach(([id, v]) => {
                     const el = document.getElementById(id);
                     el.value = v;
                     el.classList.remove('field-fromphoto'); void el.offsetWidth; el.classList.add('field-fromphoto');
                 });
             }
-            showStatus('Fotka pridaná');
+            showStatus(`${data.photos.length} fotiek pridaných`);
         } catch (e) {
             alert('Chyba skenu: ' + e.message);
         } finally {
@@ -545,6 +605,7 @@
             personal_notes: val('ie-notes') || null,
             info_source: val('ie-source') || null,
             photo_path: editPhotoPath,
+            photos: editPhotos,
         };
     }
 
@@ -569,7 +630,7 @@
         const name = val('fName');
         if (!name) return alert('Kanonický názov je povinný');
         // ak z fotky prišiel zdroj = photo, inak zachovaj ručne zadaný zdroj
-        const infoSource = val('fSource') || (pendingPhotoPath ? 'photo' : null);
+        const infoSource = val('fSource') || (pendingPhotos.length ? 'photo' : null);
         const body = {
             canonical_name: name,
             aliases: parseAliases(val('fAliases')),
@@ -584,6 +645,7 @@
             personal_notes: val('fNotes') || null,
             info_source: infoSource,
             photo_path: pendingPhotoPath,
+            photos: pendingPhotos,
         };
         const btn = document.getElementById('saveBtn');
         btn.disabled = true; btn.textContent = 'Ukladám…';
@@ -597,7 +659,7 @@
             ['fName','fStrength','fForm','fManufacturer','fAliases','fSukl','fAtc',
              'fDescription','fSideEffects','fNotes','fSource'].forEach(id => document.getElementById(id).value = '');
             document.getElementById('fKind').value = 'liek';
-            pendingPhotoPath = null;
+            pendingPhotos = []; pendingPhotoPath = null;
             document.getElementById('scanPreview').innerHTML = '';
             showStatus('Pridané do katalógu');
             loadCatalog();

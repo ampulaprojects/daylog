@@ -95,11 +95,23 @@ def init_db():
             personal_notes TEXT,
             info_source TEXT,
             photo_path TEXT,
+            photos TEXT DEFAULT '[]',
             active INTEGER DEFAULT 1,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )
     """)
+    try:
+        conn.execute("ALTER TABLE med_catalog ADD COLUMN photos TEXT DEFAULT '[]'")
+    except Exception:
+        pass
+    # migrácia: existujúci photo_path skopíruj do photos ako prvý prvok (raz)
+    conn.execute(
+        """UPDATE med_catalog
+           SET photos = '["' || replace(photo_path, '"', '') || '"]'
+           WHERE photo_path IS NOT NULL AND photo_path != ''
+             AND (photos IS NULL OR photos = '[]' OR photos = '')"""
+    )
     conn.commit()
     conn.close()
 
@@ -468,18 +480,18 @@ def get_catalog_item(item_id):
 def create_catalog_item(canonical_name, aliases="[]", kind="liek", strength=None,
                         form=None, manufacturer=None, sukl_code=None, atc_code=None,
                         description=None, side_effects=None, personal_notes=None,
-                        info_source=None, photo_path=None):
+                        info_source=None, photo_path=None, photos="[]"):
     conn = get_db()
     now = datetime.utcnow().isoformat()
     cur = conn.execute(
         """INSERT INTO med_catalog
            (canonical_name, aliases, kind, strength, form, manufacturer, sukl_code,
             atc_code, description, side_effects, personal_notes, info_source,
-            photo_path, active, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)""",
+            photo_path, photos, active, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)""",
         (canonical_name, aliases, kind, strength, form, manufacturer, sukl_code,
          atc_code, description, side_effects, personal_notes, info_source,
-         photo_path, now, now)
+         photo_path, photos, now, now)
     )
     conn.commit()
     item_id = cur.lastrowid
@@ -489,17 +501,17 @@ def create_catalog_item(canonical_name, aliases="[]", kind="liek", strength=None
 
 def update_catalog_item(item_id, canonical_name, aliases, kind, strength, form,
                         manufacturer, sukl_code, atc_code, description, side_effects,
-                        personal_notes, info_source, photo_path):
+                        personal_notes, info_source, photo_path, photos="[]"):
     conn = get_db()
     now = datetime.utcnow().isoformat()
     conn.execute(
         """UPDATE med_catalog SET canonical_name=?, aliases=?, kind=?, strength=?,
            form=?, manufacturer=?, sukl_code=?, atc_code=?, description=?,
-           side_effects=?, personal_notes=?, info_source=?, photo_path=?,
+           side_effects=?, personal_notes=?, info_source=?, photo_path=?, photos=?,
            updated_at=? WHERE id=?""",
         (canonical_name, aliases, kind, strength, form, manufacturer, sukl_code,
          atc_code, description, side_effects, personal_notes, info_source,
-         photo_path, now, item_id)
+         photo_path, photos, now, item_id)
     )
     conn.commit()
     conn.close()
