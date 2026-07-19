@@ -392,6 +392,7 @@ class CatalogBody(BaseModel):
     info_source: Optional[str] = None
     photo_path: Optional[str] = None
     photos: List[str] = []
+    extracted_raw: Optional[str] = None
 
 
 def _catalog_out(item: dict) -> dict:
@@ -447,7 +448,8 @@ def add_catalog(body: CatalogBody, user=Depends(require_auth)):
         manufacturer=body.manufacturer, sukl_code=body.sukl_code,
         atc_code=body.atc_code, description=body.description,
         side_effects=body.side_effects, personal_notes=body.personal_notes,
-        info_source=body.info_source, photo_path=photo_path, photos=photos_json
+        info_source=body.info_source, photo_path=photo_path, photos=photos_json,
+        extracted_raw=body.extracted_raw
     )
     return {"id": item_id}
 
@@ -479,8 +481,11 @@ async def catalog_scan(files: List[UploadFile] = File(...), user=Depends(require
         result = scan_med_package(images)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Chyba skenu: {e}")
+    extracted = result.get("extracted_all") or {}
     return {
         "fields": result["fields"],
+        "extracted_all": extracted,
+        "extracted_raw": json.dumps(extracted, ensure_ascii=False) if extracted else None,
         "raw": result["raw"],
         "photos": photos,
         "photo_path": photos[0] if photos else None,
@@ -498,7 +503,8 @@ def edit_catalog(item_id: int, body: CatalogBody, user=Depends(require_auth)):
         form=body.form, manufacturer=body.manufacturer, sukl_code=body.sukl_code,
         atc_code=body.atc_code, description=body.description,
         side_effects=body.side_effects, personal_notes=body.personal_notes,
-        info_source=body.info_source, photo_path=photo_path, photos=photos_json
+        info_source=body.info_source, photo_path=photo_path, photos=photos_json,
+        extracted_raw=body.extracted_raw
     )
     return {"id": item_id}
 

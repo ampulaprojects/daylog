@@ -129,6 +129,19 @@
         .cat-photo-lg { margin-top: 8px; }
         .cat-photo-lg img { max-width: 100%; max-height: 220px; border-radius: 6px; border: 1px solid #e5e7eb; cursor: zoom-in; }
 
+        /* ── Neštruktúrované údaje (extracted_raw) ───────────────────────── */
+        .ex-details { margin-top: 8px; border: 1px solid #e5e7eb; border-radius: 6px; background: #fafafa; }
+        .ex-details > summary { cursor: pointer; padding: 7px 10px; font-size: 12px; font-weight: 600; color: #6b7280; user-select: none; list-style-position: inside; }
+        .ex-details > summary:hover { color: #111; }
+        .ex-details[open] > summary { border-bottom: 1px solid #e5e7eb; }
+        .ex-body { padding: 8px 10px; font-size: 13px; }
+        .ex-row { display: flex; gap: 8px; padding: 3px 0; align-items: baseline; }
+        .ex-row + .ex-row { border-top: 1px dotted #eee; }
+        .ex-key { font-size: 11px; font-weight: 600; color: #9ca3af; min-width: 120px; flex-shrink: 0; text-transform: capitalize; }
+        .ex-val { color: #374151; white-space: pre-wrap; }
+        .ex-list { margin: 0; padding-left: 18px; }
+        .ex-nested { display: flex; flex-direction: column; gap: 2px; }
+
         /* ── Lightbox ────────────────────────────────────────────────────── */
         #photoOverlay {
             display: none; position: fixed; inset: 0;
@@ -272,8 +285,10 @@
     let showInactive = false;
     let pendingPhotos = [];        // galéria fotiek pre NOVY liek (ešte neuložený)
     let pendingPhotoPath = null;   // hlavná fotka (thumbnail) nového lieku
+    let pendingExtracted = {};     // neštruktúrované údaje z krabičky (nový liek)
     let editPhotos = [];           // galéria fotiek v inline editore
     let editPhotoPath = null;      // hlavná fotka v inline editore
+    let editExtractedRaw = null;   // neštruktúrované údaje (JSON string) v editore
 
     const KIND_LABELS = { liek: 'liek', vitamin: 'vitamín', doplnok: 'doplnok' };
 
@@ -341,6 +356,8 @@
             // pridaj nové fotky do galérie (append — umožní pridať ďalšie strany)
             for (const p of (data.photos || [])) if (!pendingPhotos.includes(p)) pendingPhotos.push(p);
             if (!pendingPhotoPath && pendingPhotos.length) pendingPhotoPath = pendingPhotos[0];
+            // zlúč neštruktúrované údaje z tohto skenu (viac skenov sa dopĺňa)
+            Object.assign(pendingExtracted, data.extracted_all || {});
             renderScanPreview();
             // predvyplň polia zo zlúčeného výstupu (len prázdne needituj násilím? — vyplň čo prišlo)
             const f = data.fields || {};
@@ -437,6 +454,26 @@
         </div>`;
     }
 
+    // ── Neštruktúrované údaje z krabičky (extracted_raw) ───────────────────────
+    function renderExtractedValue(v) {
+        if (Array.isArray(v))
+            return `<ul class="ex-list">${v.map(x => `<li>${renderExtractedValue(x)}</li>`).join('')}</ul>`;
+        if (v && typeof v === 'object')
+            return `<div class="ex-nested">${Object.entries(v).map(([k, val]) =>
+                `<div class="ex-row"><span class="ex-key">${esc(k.replace(/_/g, ' '))}</span>${renderExtractedValue(val)}</div>`).join('')}</div>`;
+        return `<span class="ex-val">${esc(v)}</span>`;
+    }
+    function extractedHtml(raw) {
+        if (!raw) return '';
+        let obj;
+        try { obj = JSON.parse(raw); } catch (e) { return ''; }
+        if (!obj || typeof obj !== 'object' || !Object.keys(obj).length) return '';
+        return `<details class="ex-details"><summary>Ďalšie údaje z krabičky</summary>
+            <div class="ex-body">${Object.entries(obj).map(([k, val]) =>
+                `<div class="ex-row"><span class="ex-key">${esc(k.replace(/_/g, ' '))}</span>${renderExtractedValue(val)}</div>`).join('')}</div>
+        </details>`;
+    }
+
     function detailHtml(i) {
         const aliases = i.aliases || [];
         const blocks = [];
@@ -456,8 +493,10 @@
         if (photos.length) blocks.push(`<div class="cat-detail-block"><div class="dl">Foto krabičky (${photos.length})</div>
             <div class="photo-strip">${photoStripHtml(photos, i.photo_path, '', '')}</div></div>`);
 
+        const exSection = extractedHtml(i.extracted_raw);
         return `<div class="cat-detail">
-            ${blocks.join('') || '<div style="color:#9ca3af">Žiadne ďalšie detaily.</div>'}
+            ${(blocks.join('') || (exSection ? '' : '<div style="color:#9ca3af">Žiadne ďalšie detaily.</div>'))}
+            ${exSection}
             <div class="cat-btns">
                 <button class="btn-muted" onclick="startEdit(${i.id})">Upraviť</button>
                 <button class="btn-muted" onclick="toggleActive(${i.id}, ${i.active})">${i.active ? 'Deaktivovať' : 'Aktivovať'}</button>
@@ -525,6 +564,7 @@
         editPhotos = (it && it.photos && it.photos.length) ? it.photos.slice()
                      : (it && it.photo_path ? [it.photo_path] : []);
         editPhotoPath = (it && it.photo_path) || (editPhotos[0] || null);
+        editExtractedRaw = (it && it.extracted_raw) || null;   // zachovaj neštruktúrované dáta
         renderCatalog();
         document.getElementById('cat-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         document.getElementById('ie-name')?.focus();
@@ -561,6 +601,13 @@
             const data = await resp.json();
             for (const p of (data.photos || [])) if (!editPhotos.includes(p)) editPhotos.push(p);
             if (!editPhotoPath && editPhotos.length) editPhotoPath = editPhotos[0];
+            // zlúč nové neštruktúrované údaje do existujúcich
+            if (data.extracted_all && Object.keys(data.extracted_all).length) {
+                let cur = {};
+                try { cur = editExtractedRaw ? JSON.parse(editExtractedRaw) : {}; } catch (e) {}
+                Object.assign(cur, data.extracted_all);
+                editExtractedRaw = JSON.stringify(cur);
+            }
             renderEditPhotos();
             // autofill LEN prázdnych polí a LEN po potvrdení (existujúce needituj)
             const f = data.fields || {};
@@ -606,6 +653,7 @@
             info_source: val('ie-source') || null,
             photo_path: editPhotoPath,
             photos: editPhotos,
+            extracted_raw: editExtractedRaw,
         };
     }
 
@@ -646,6 +694,7 @@
             info_source: infoSource,
             photo_path: pendingPhotoPath,
             photos: pendingPhotos,
+            extracted_raw: Object.keys(pendingExtracted).length ? JSON.stringify(pendingExtracted) : null,
         };
         const btn = document.getElementById('saveBtn');
         btn.disabled = true; btn.textContent = 'Ukladám…';
@@ -659,7 +708,7 @@
             ['fName','fStrength','fForm','fManufacturer','fAliases','fSukl','fAtc',
              'fDescription','fSideEffects','fNotes','fSource'].forEach(id => document.getElementById(id).value = '');
             document.getElementById('fKind').value = 'liek';
-            pendingPhotos = []; pendingPhotoPath = null;
+            pendingPhotos = []; pendingPhotoPath = null; pendingExtracted = {};
             document.getElementById('scanPreview').innerHTML = '';
             showStatus('Pridané do katalógu');
             loadCatalog();

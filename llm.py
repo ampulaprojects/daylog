@@ -137,9 +137,16 @@ SCAN_MED_PROMPT = (
     "  sukl_code — ŠÚKL kód ak je viditeľný, inak null\n"
     "  atc_code — ATC kód ak je viditeľný, inak null\n"
     "  package_info — veľkosť balenia (napr. \"100 tabliet\"), inak null\n"
+    "  extracted_all — JSON objekt so VŠETKÝMI ostatnými čitateľnými údajmi z krabičky, "
+    "ktoré sa nezmestili do polí vyššie. Kľúče si zvoľ sám podľa toho, čo na krabičke "
+    "reálne je (nie fixná schéma). Napríklad: účinná/liečivá látka, zloženie, "
+    "indikácie/použitie, dávkovanie, spôsob podania, upozornenia (napr. tehotenstvo), "
+    "skladovanie, dátum exspirácie, registračné číslo, čiarový kód, výdaj (na predpis), "
+    "a čokoľvek ďalšie čitateľné. Ak je viac fotiek, zlúč údaje. Prázdny objekt {} ak nič ďalšie.\n"
+    "ČÍTAJ IBA reálny text z obrázkov — nič nedopĺňaj, nehádaj.\n"
     'Vráť iba JSON objekt bez iného textu: '
     '{"name": ..., "strength": ..., "form": ..., "manufacturer": ..., '
-    '"sukl_code": ..., "atc_code": ..., "package_info": ...}'
+    '"sukl_code": ..., "atc_code": ..., "package_info": ..., "extracted_all": {...}}'
 )
 
 _SCAN_FIELDS = ("name", "strength", "form", "manufacturer", "sukl_code", "atc_code", "package_info")
@@ -164,7 +171,7 @@ def scan_med_package(images) -> dict:
 
     response = client.messages.create(
         model=MODEL_NAME,
-        max_tokens=512,
+        max_tokens=1536,
         messages=[{"role": "user", "content": content}]
     )
 
@@ -181,7 +188,30 @@ def scan_med_package(images) -> dict:
             if val == "" or val.lower() == "null":
                 val = None
         fields[key] = val
-    return {"fields": fields, "raw": raw}
+    # neštruktúrované — všetko ostatné čitateľné z krabičky (voľná schéma)
+    extracted = parsed.get("extracted_all")
+    if not isinstance(extracted, dict):
+        extracted = {}
+    extracted = _clean_extracted(extracted)
+    return {"fields": fields, "extracted_all": extracted, "raw": raw}
+
+
+def _clean_extracted(obj):
+    """Odstráni prázdne / null hodnoty z neštruktúrovaných dát, rekurzívne."""
+    if isinstance(obj, dict):
+        out = {}
+        for k, v in obj.items():
+            cv = _clean_extracted(v)
+            if cv not in (None, "", [], {}):
+                out[k] = cv
+        return out
+    if isinstance(obj, list):
+        cleaned = [_clean_extracted(v) for v in obj]
+        return [v for v in cleaned if v not in (None, "", [], {})]
+    if isinstance(obj, str):
+        s = obj.strip()
+        return None if s == "" or s.lower() == "null" else s
+    return obj
 
 
 def transcribe_photo(image_bytes: bytes) -> dict:
