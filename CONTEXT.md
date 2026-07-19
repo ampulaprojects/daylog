@@ -81,10 +81,13 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 - Dlhé LLM volania (web search ~95s) potrebujú nginx proxy_read_timeout — default 60s nestačí
 - Web search vkladá plný text nájdených stránok do input tokenov — jeden PIL ~40-98k tokenov. Preto cache + limit web searchov.
 - PIL nájde len reálne SK lieky (sukl.sk/adc.sk); zahraničné doplnky poctivo vráti "nenašiel" — to je zámer (poistka proti halucinácii)
+- Zlučovanie liekov je nezvratné a dotýka sa eventov (catalog_id) — poradie kritické: prepoj eventy → over 0 osirených → až potom zmaž duplikát. Pred zlúčením na produkcii sa robí záloha daylog.db.pre-merge.
 
 ## Changelog
 
 ### 2026-07-19
+- Zlučovanie duplicitných liekov v katalógu: POST /catalog/merge, porovnávací panel s výberom polí, transakčné (celé alebo nič), prepojí eventy z B na A PRED zmazaním B, overí 0 osirených odkazov (inak rollback), zlúči aliasy + fotky; B sa natvrdo zmaže
+- PIL cache neúspechu: pil_last_attempt stĺpec — neúspešné hľadanie sa zapamätá, tlačidlo ukáže "Zdroj sa nenašiel (dátum)", opakovanie vyžaduje potvrdenie (nešpiní peniaze náhodným klikom); úspech resetuje príznak
 - Sledovanie spotreby LLM: tabuľka llm_usage, tiché zbieranie pri každom volaní (input/output tokeny, web searches, cena)
 - Stránka /usage (len admin): rozpad podľa funkcie (extract/scan/transcribe/pil), súčty za deň/mesiac/celkovo, posledné volania
 - Ceny natvrdo v config (claude-sonnet-4-6: $3/1M input, $15/1M output, web search $10/1000) — upraviteľné
