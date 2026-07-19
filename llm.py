@@ -137,16 +137,36 @@ SCAN_MED_PROMPT = (
     "  sukl_code — ŠÚKL kód ak je viditeľný, inak null\n"
     "  atc_code — ATC kód ak je viditeľný, inak null\n"
     "  package_info — veľkosť balenia (napr. \"100 tabliet\"), inak null\n"
-    "  extracted_all — JSON objekt so VŠETKÝMI ostatnými čitateľnými údajmi z krabičky, "
-    "ktoré sa nezmestili do polí vyššie. Kľúče si zvoľ sám podľa toho, čo na krabičke "
-    "reálne je (nie fixná schéma). Napríklad: účinná/liečivá látka, zloženie, "
-    "indikácie/použitie, dávkovanie, spôsob podania, upozornenia (napr. tehotenstvo), "
-    "skladovanie, dátum exspirácie, registračné číslo, čiarový kód, výdaj (na predpis), "
-    "a čokoľvek ďalšie čitateľné. Ak je viac fotiek, zlúč údaje. Prázdny objekt {} ak nič ďalšie.\n"
-    "ČÍTAJ IBA reálny text z obrázkov — nič nedopĺňaj, nehádaj.\n"
+    "  extracted_all — JSON objekt s ďalšími čitateľnými údajmi z krabičky.\n"
+    "\n"
+    "PRE extracted_all POUŽI TIETO PEVNÉ SLOVENSKÉ KANONICKÉ KĽÚČE (ak je daný údaj na krabičke):\n"
+    "  ucinna_latka — účinná / liečivá látka\n"
+    "  zlozenie — zloženie / ingrediencie (VŠETKO do jedného kľúča: liečivá aj pomocné látky)\n"
+    "  davkovanie — dávkovanie / užívanie / spôsob podania\n"
+    "  upozornenia — VŠETKY upozornenia a varovania spolu ako JEDEN zoznam (pole reťazcov)\n"
+    "  skladovanie — podmienky skladovania / uchovávania\n"
+    "  exspiracia — dátum exspirácie / minimálna trvanlivosť\n"
+    "  sarza — číslo šarže / LOT\n"
+    "  ean — čiarový kód / EAN\n"
+    "  reg_cislo — registračné číslo\n"
+    "  vydaj — výdaj (na lekársky predpis / voľnopredajný)\n"
+    "  typ_produktu — liek / doplnok / vitamín (ak je uvedené)\n"
+    "\n"
+    "PRAVIDLÁ pre extracted_all:\n"
+    "  - Preferuj SLOVENSKÉ kanonické kľúče zo zoznamu vyššie.\n"
+    "  - NEPRIDÁVAJ jazykové sufixy — žiadne _CZ, _SK, _fi, _de, _en. Jeden kľúč pre jeden koncept.\n"
+    "  - Ak je údaj vo viacerých jazykoch, ZLÚČ do jedného kľúča (preferuj slovenčinu, inak čo je čitateľné).\n"
+    "  - Údaje, ktoré NEPATRIA do žiadneho kľúča vyššie (napr. marketing/slogan, NRV/výživové hodnoty, "
+    "diétne vlajky ako vegan, distribútor, web, recyklácia), daj do VNORENÉHO objektu pod kľúčom \"ostatne\".\n"
+    "  - Ak je viac fotiek, zlúč údaje. Prázdny objekt {} ak nič ďalšie. Nečitateľné vynechaj.\n"
+    "  - ČÍTAJ IBA reálny text z obrázkov — nič nedopĺňaj, nehádaj.\n"
+    "\n"
     'Vráť iba JSON objekt bez iného textu: '
     '{"name": ..., "strength": ..., "form": ..., "manufacturer": ..., '
-    '"sukl_code": ..., "atc_code": ..., "package_info": ..., "extracted_all": {...}}'
+    '"sukl_code": ..., "atc_code": ..., "package_info": ..., '
+    '"extracted_all": {"ucinna_latka": ..., "zlozenie": ..., "davkovanie": ..., '
+    '"upozornenia": [...], "skladovanie": ..., "exspiracia": ..., "sarza": ..., '
+    '"ean": ..., "reg_cislo": ..., "vydaj": ..., "typ_produktu": ..., "ostatne": {...}}}'
 )
 
 _SCAN_FIELDS = ("name", "strength", "form", "manufacturer", "sukl_code", "atc_code", "package_info")
