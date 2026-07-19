@@ -142,6 +142,22 @@
         .ex-list { margin: 0; padding-left: 18px; }
         .ex-nested { display: flex; flex-direction: column; gap: 2px; }
 
+        /* ── PIL (príbalový leták) ───────────────────────────────────────── */
+        .pil-loading { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #1e40af; margin-top: 10px; }
+        .pil-result { margin-top: 10px; border: 1px solid #bfdbfe; border-radius: 8px; background: #f0f7ff; padding: 10px; }
+        .pil-notfound { margin-top: 10px; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; padding: 10px; font-size: 13px; color: #991b1b; }
+        .pil-matched { font-size: 13px; }
+        .pil-matched .lbl { font-size: 11px; font-weight: 600; color: #1e40af; text-transform: uppercase; }
+        .pil-src { font-size: 12px; margin: 6px 0; word-break: break-word; }
+        .pil-src a { color: #1d4ed8; }
+        .pil-disclaimer { font-size: 11px; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 6px 8px; margin: 8px 0; }
+        .pil-actions { display: flex; gap: 8px; margin-top: 8px; }
+        /* uložená PIL sekcia v detaile — vizuálne oddelená od krabičkových dát */
+        .pil-saved { margin-top: 8px; border: 1px solid #dbeafe; border-radius: 6px; background: #f8fbff; }
+        .pil-saved > summary { cursor: pointer; padding: 7px 10px; font-size: 12px; font-weight: 600; color: #1e40af; user-select: none; }
+        .pil-saved[open] > summary { border-bottom: 1px solid #dbeafe; }
+        .pil-saved .ex-body { padding: 8px 10px; }
+
         /* ── Lightbox ────────────────────────────────────────────────────── */
         #photoOverlay {
             display: none; position: fixed; inset: 0;
@@ -494,15 +510,99 @@
             <div class="photo-strip">${photoStripHtml(photos, i.photo_path, '', '')}</div></div>`);
 
         const exSection = extractedHtml(i.extracted_raw);
+        const pilSection = pilSavedHtml(i);
+        const hasAny = blocks.length || exSection || pilSection;
         return `<div class="cat-detail">
-            ${(blocks.join('') || (exSection ? '' : '<div style="color:#9ca3af">Žiadne ďalšie detaily.</div>'))}
+            ${(blocks.join('') || (hasAny ? '' : '<div style="color:#9ca3af">Žiadne ďalšie detaily.</div>'))}
             ${exSection}
+            ${pilSection}
             <div class="cat-btns">
                 <button class="btn-muted" onclick="startEdit(${i.id})">Upraviť</button>
+                <button class="btn-muted" onclick="fetchPil(${i.id})">🔍 Dohľadať z príbalového letáka</button>
                 <button class="btn-muted" onclick="toggleActive(${i.id}, ${i.active})">${i.active ? 'Deaktivovať' : 'Aktivovať'}</button>
                 <button class="btn-danger" onclick="deleteItem(${i.id})">Zmazať</button>
             </div>
+            <div id="pil-proposal-${i.id}"></div>
         </div>`;
+    }
+
+    // ── PIL: dohľadávanie z príbalového letáka ─────────────────────────────────
+    const PIL_DISCLAIMER = 'Orientačné info z webu, over podľa príbalového letáka. Nie je náhrada za konzultáciu s lekárom.';
+    let pilProposals = {};   // id -> návrh (kým sa neuloží/nezamietne)
+
+    function pilSavedHtml(i) {
+        if (!i.pil_info || !Object.keys(i.pil_info).length) return '';
+        const src = i.pil_source || {};
+        const srcLine = src.url
+            ? `<div class="pil-src">Zdroj: <a href="${esc(src.url)}" target="_blank" rel="noopener">${esc(src.name || src.url)}</a>${src.fetched_at ? ' · ' + esc(src.fetched_at) : ''}</div>`
+            : '';
+        const body = Object.entries(i.pil_info).map(([k, v]) =>
+            `<div class="ex-row"><span class="ex-key">${esc(k.replace(/_/g, ' '))}</span>${renderExtractedValue(v)}</div>`).join('');
+        return `<details class="pil-saved"><summary>Z príbalového letáka</summary>
+            <div class="ex-body">
+                ${srcLine}
+                <div class="pil-disclaimer">${PIL_DISCLAIMER}</div>
+                ${body}
+            </div></details>`;
+    }
+
+    async function fetchPil(id) {
+        const box = document.getElementById('pil-proposal-' + id);
+        if (!box) return;
+        box.innerHTML = `<div class="pil-loading"><span class="spinner"></span> Dohľadávam z príbalového letáka (web search — môže trvať 1–2 minúty)…</div>`;
+        try {
+            const resp = await fetch(`/catalog/${id}/fetch-pil`, { method: 'POST', headers: { 'Accept': 'application/json' } });
+            if (resp.status === 401) { location.href = '/login'; return; }
+            if (!resp.ok) throw new Error(await resp.text());
+            const data = await resp.json();
+            if (!data.found) {
+                box.innerHTML = `<div class="pil-notfound">Nenašiel sa spoľahlivý zdroj — nič sa neuloží.</div>`;
+                return;
+            }
+            pilProposals[id] = data;
+            box.innerHTML = pilProposalHtml(id, data);
+        } catch (e) {
+            box.innerHTML = `<div class="pil-notfound">Chyba dohľadávania: ${esc(e.message)}</div>`;
+        }
+    }
+
+    function pilProposalHtml(id, data) {
+        const info = data.pil_info || {};
+        const body = Object.entries(info).map(([k, v]) =>
+            `<div class="ex-row"><span class="ex-key">${esc(k.replace(/_/g, ' '))}</span>${renderExtractedValue(v)}</div>`).join('');
+        const srcLine = data.source_url
+            ? `<div class="pil-src">Zdroj: <a href="${esc(data.source_url)}" target="_blank" rel="noopener">${esc(data.source_name || data.source_url)}</a></div>`
+            : '';
+        return `<div class="pil-result">
+            <div class="pil-matched"><span class="lbl">Našiel som</span> ${esc(data.matched_medication || '—')}</div>
+            ${srcLine}
+            <div class="pil-disclaimer">${PIL_DISCLAIMER}</div>
+            <div class="ex-body" style="padding-left:0">${body}</div>
+            <div class="pil-actions">
+                <button onclick="savePil(${id})">Uložiť</button>
+                <button class="btn-ghost" onclick="rejectPil(${id})">Zamietnuť</button>
+            </div>
+        </div>`;
+    }
+
+    async function savePil(id) {
+        const data = pilProposals[id];
+        if (!data || !data.source_url) return alert('Bez zdroja sa nič neuloží');
+        const resp = await fetch(`/catalog/${id}/pil`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pil_info: data.pil_info, source_url: data.source_url, source_name: data.source_name })
+        });
+        if (resp.status === 401) { location.href = '/login'; return; }
+        if (!resp.ok) return alert('Chyba: ' + await resp.text());
+        delete pilProposals[id];
+        showStatus('Uložené z príbalového letáka');
+        loadCatalog();
+    }
+
+    function rejectPil(id) {
+        delete pilProposals[id];
+        const box = document.getElementById('pil-proposal-' + id);
+        if (box) box.innerHTML = '';
     }
 
     // ── Inline edit ──────────────────────────────────────────────────────────

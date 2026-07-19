@@ -3,6 +3,8 @@ import io
 import os
 import json
 import re
+import urllib.request
+import urllib.error
 import anthropic
 from dotenv import load_dotenv
 
@@ -259,6 +261,120 @@ def transcribe_photo(image_bytes: bytes) -> dict:
     return {
         "transcription": result.get("transcription", raw),
         "suggested_date": suggested,
+    }
+
+
+# ── PIL dohľadávanie z webu (web_search server tool) ─────────────────────────
+# Pozn.: pinnutá anthropic==0.40.0 nevie zostaviť web_search tool, preto ide
+# fetch_pil_info cez raw HTTP (urllib). Ostatné volania používajú SDK ďalej.
+
+_PIL_SYSTEM = (
+    "Si asistent, ktorý dohľadáva oficiálne informácie o lieku z internetu. "
+    "Používaš nástroj web_search. Extrahuj údaje IBA z reálne nájdeného oficiálneho "
+    "dokumentu (príbalový leták PIL / SPC / oficiálna databáza). NEVYMÝŠĽAJ, nedopĺňaj "
+    "z vlastnej pamäte. Ak nenájdeš dôveryhodný zdroj, vráť error a zdroj null."
+)
+
+
+def _pil_user_prompt(name, strength, manufacturer, atc_code):
+    ident = ", ".join(p for p in [
+        f"názov: {name}",
+        f"sila: {strength}" if strength else "",
+        f"výrobca/držiteľ: {manufacturer}" if manufacturer else "",
+        f"ATC: {atc_code}" if atc_code else "",
+    ] if p)
+    return (
+        f"Nájdi oficiálny príbalový leták (PIL/PIL) alebo SPC pre TENTO konkrétny liek:\n{ident}\n\n"
+        "Preferuj oficiálne zdroje v tomto poradí: sukl.sk, ema.europa.eu, adc.sk, "
+        "oficiálna stránka výrobcu. Over, že dokument zodpovedá práve tomuto lieku "
+        "(názov + sila + výrobca).\n\n"
+        "Extrahuj informácie, ktoré typicky NIE SÚ na krabičke — najmä: úplné vedľajšie "
+        "účinky, liekové interakcie, kontraindikácie, presné dávkovanie podľa veku/hmotnosti, "
+        "dôležité upozornenia.\n\n"
+        "Vráť NA KONCI iba jeden JSON objekt (bez ďalšieho textu okolo) s kanonickými "
+        "slovenskými kľúčmi:\n"
+        "  najdeny_liek — názov + sila lieku z nájdeného dokumentu (nech to používateľ overí)\n"
+        "  vedlajsie_ucinky — zoznam alebo text\n"
+        "  interakcie\n"
+        "  kontraindikacie\n"
+        "  davkovanie_detail — presné dávkovanie podľa veku/hmotnosti\n"
+        "  upozornenia\n"
+        "  (podľa dokumentu prípadne ďalšie kanonické kľúče, napr. sposob_uzivania, "
+        "predavkovanie, tehotenstvo)\n"
+        "  zdroj — POVINNÉ, URL dokumentu ktorý si reálne použil\n"
+        "  zdroj_nazov — názov stránky/dokumentu\n\n"
+        "Ak si NENAŠIEL spoľahlivý oficiálny zdroj pre tento liek, vráť namiesto toho:\n"
+        '  {"error": "nenašiel som spoľahlivý zdroj", "zdroj": null}\n'
+        "Bez reálneho zdroja (zdroj = URL) nič nevypĺňaj."
+    )
+
+
+def _anthropic_http(payload: dict) -> dict:
+    """Raw POST na /v1/messages — obchádza starú SDK kvôli web_search toolu."""
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/messages", data=body,
+        headers={
+            "x-api-key": os.environ["ANTHROPIC_API_KEY"],
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        })
+    with urllib.request.urlopen(req, timeout=180) as r:
+        return json.loads(r.read())
+
+
+def fetch_pil_info(name, strength=None, manufacturer=None, atc_code=None) -> dict:
+    """Dohľadá info z príbalového letáka cez web search. Vráti NÁVRH (neukladá).
+    VŽDY vyžaduje zdroj (URL) — bez neho found=False."""
+    messages = [{"role": "user", "content": _pil_user_prompt(name, strength, manufacturer, atc_code)}]
+    # basic web_search (bez dynamic-filtering code exec) + limit vyhľadávaní +
+    # obmedzenie na oficiálne zdroje → rýchlejšie a bezpečnejšie (menšie riziko zlého zdroja)
+    tools = [{
+        "type": "web_search_20250305", "name": "web_search",
+        "max_uses": 5,
+        "allowed_domains": ["sukl.sk", "adc.sk", "ema.europa.eu", "adcc.sk"],
+    }]
+
+    raw_text = ""
+    # web_search beží server-side; pri limite iterácií vráti pause_turn → pokračuj
+    for _ in range(4):
+        data = _anthropic_http({
+            "model": MODEL_NAME,
+            "max_tokens": 4096,
+            "system": _PIL_SYSTEM,
+            "tools": tools,
+            "messages": messages,
+        })
+        content = data.get("content", [])
+        raw_text = "".join(b.get("text", "") for b in content if b.get("type") == "text")
+        if data.get("stop_reason") == "pause_turn":
+            messages.append({"role": "assistant", "content": content})
+            continue
+        break
+
+    parsed = _parse_llm_json(raw_text, "")
+    if not isinstance(parsed, dict):
+        parsed = {}
+
+    source_url = parsed.get("zdroj")
+    if isinstance(source_url, str):
+        source_url = source_url.strip() or None
+
+    # bez reálneho zdroja alebo s errorom → nič sa neponúkne na uloženie
+    if parsed.get("error") or not source_url:
+        return {"found": False, "matched_medication": parsed.get("najdeny_liek"),
+                "pil_info": {}, "source_url": None, "source_name": None, "raw": raw_text}
+
+    reserved = {"zdroj", "zdroj_nazov", "najdeny_liek", "error"}
+    pil_info = _clean_extracted({k: v for k, v in parsed.items() if k not in reserved})
+
+    return {
+        "found": bool(pil_info),
+        "matched_medication": parsed.get("najdeny_liek"),
+        "pil_info": pil_info,
+        "source_url": source_url,
+        "source_name": parsed.get("zdroj_nazov"),
+        "raw": raw_text,
     }
 
 

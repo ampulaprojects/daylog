@@ -16,10 +16,10 @@ from database import (
     get_medications, create_medication, update_medication,
     delete_medication, set_medication_active, reorder_medications,
     get_catalog, get_catalog_item, create_catalog_item, update_catalog_item,
-    delete_catalog_item, set_catalog_active, find_by_alias
+    delete_catalog_item, set_catalog_active, find_by_alias, update_catalog_pil
 )
 from auth import verify_password, create_session_token, decode_session_token
-from llm import extract_events, transcribe_photo, scan_med_package
+from llm import extract_events, transcribe_photo, scan_med_package, fetch_pil_info
 
 UPLOAD_DIR = pathlib.Path("uploads")
 app = FastAPI()
@@ -408,6 +408,15 @@ def _catalog_out(item: dict) -> dict:
     # spätná kompatibilita: ak má liek len photo_path a prázdne photos, zobraz ho v galérii
     if not item["photos"] and item.get("photo_path"):
         item["photos"] = [item["photo_path"]]
+    # dohľadané PIL dáta (oddelene od krabičkových extracted_raw)
+    try:
+        item["pil_info"] = json.loads(item.get("pil_info")) if item.get("pil_info") else None
+    except (ValueError, TypeError):
+        item["pil_info"] = None
+    try:
+        item["pil_source"] = json.loads(item.get("pil_source")) if item.get("pil_source") else None
+    except (ValueError, TypeError):
+        item["pil_source"] = None
     return item
 
 
@@ -490,6 +499,50 @@ async def catalog_scan(files: List[UploadFile] = File(...), user=Depends(require
         "photos": photos,
         "photo_path": photos[0] if photos else None,
     }
+
+
+class PilSaveBody(BaseModel):
+    pil_info: dict
+    source_url: str
+    source_name: Optional[str] = None
+
+
+@app.post("/catalog/{item_id}/fetch-pil")
+def fetch_pil(item_id: int, user=Depends(require_auth)):
+    """Dohľadá info z príbalového letáka cez web search. NEUKLADÁ — len návrh.
+    Vždy vráti aj zdroj (URL); ak sa nenájde spoľahlivý zdroj, found=False."""
+    item = get_catalog_item(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Položka nenájdená")
+    try:
+        result = fetch_pil_info(
+            name=item["canonical_name"], strength=item.get("strength"),
+            manufacturer=item.get("manufacturer"), atc_code=item.get("atc_code"),
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Chyba dohľadávania: {e}")
+    return {
+        "found": result["found"],
+        "matched_medication": result["matched_medication"],
+        "pil_info": result["pil_info"],
+        "source_url": result["source_url"],
+        "source_name": result["source_name"],
+    }
+
+
+@app.put("/catalog/{item_id}/pil")
+def save_pil(item_id: int, body: PilSaveBody, user=Depends(require_auth)):
+    """Uloží POTVRDENÉ dohľadané PIL dáta. Bez zdroja (URL) sa nič neuloží."""
+    if not get_catalog_item(item_id):
+        raise HTTPException(status_code=404, detail="Položka nenájdená")
+    if not body.source_url or not body.source_url.strip():
+        raise HTTPException(status_code=400, detail="Bez zdroja sa nič neuloží")
+    pil_source = json.dumps({
+        "url": body.source_url, "name": body.source_name,
+        "fetched_at": datetime.utcnow().strftime("%Y-%m-%d"),
+    }, ensure_ascii=False)
+    update_catalog_pil(item_id, json.dumps(body.pil_info, ensure_ascii=False), pil_source)
+    return {"id": item_id}
 
 
 @app.put("/catalog/{item_id}")

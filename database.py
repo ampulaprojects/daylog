@@ -97,6 +97,8 @@ def init_db():
             photo_path TEXT,
             photos TEXT DEFAULT '[]',
             extracted_raw TEXT,
+            pil_info TEXT,
+            pil_source TEXT,
             active INTEGER DEFAULT 1,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
@@ -108,6 +110,14 @@ def init_db():
         pass
     try:
         conn.execute("ALTER TABLE med_catalog ADD COLUMN extracted_raw TEXT")
+    except Exception:
+        pass
+    try:
+        conn.execute("ALTER TABLE med_catalog ADD COLUMN pil_info TEXT")
+    except Exception:
+        pass
+    try:
+        conn.execute("ALTER TABLE med_catalog ADD COLUMN pil_source TEXT")
     except Exception:
         pass
     # migrácia: existujúci photo_path skopíruj do photos ako prvý prvok (raz)
@@ -519,6 +529,16 @@ def update_catalog_item(item_id, canonical_name, aliases, kind, strength, form,
          atc_code, description, side_effects, personal_notes, info_source,
          photo_path, photos, extracted_raw, now, item_id)
     )
+    conn.commit()
+    conn.close()
+
+
+def update_catalog_pil(item_id, pil_info, pil_source):
+    """Aktualizuje LEN dohľadané PIL dáta (oddelene od krabičkových)."""
+    conn = get_db()
+    now = datetime.utcnow().isoformat()
+    conn.execute("UPDATE med_catalog SET pil_info=?, pil_source=?, updated_at=? WHERE id=?",
+                 (pil_info, pil_source, now, item_id))
     conn.commit()
     conn.close()
 
