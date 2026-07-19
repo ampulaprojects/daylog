@@ -120,6 +120,10 @@ def init_db():
         conn.execute("ALTER TABLE med_catalog ADD COLUMN pil_source TEXT")
     except Exception:
         pass
+    try:
+        conn.execute("ALTER TABLE med_catalog ADD COLUMN pil_last_attempt TEXT")
+    except Exception:
+        pass
     # migrácia: existujúci photo_path skopíruj do photos ako prvý prvok (raz)
     conn.execute(
         """UPDATE med_catalog
@@ -548,11 +552,22 @@ def update_catalog_item(item_id, canonical_name, aliases, kind, strength, form,
 
 
 def update_catalog_pil(item_id, pil_info, pil_source):
-    """Aktualizuje LEN dohľadané PIL dáta (oddelene od krabičkových)."""
+    """Uloží úspešne dohľadané PIL dáta. Zmaže príznak neúspešného pokusu."""
     conn = get_db()
     now = datetime.utcnow().isoformat()
-    conn.execute("UPDATE med_catalog SET pil_info=?, pil_source=?, updated_at=? WHERE id=?",
-                 (pil_info, pil_source, now, item_id))
+    conn.execute(
+        "UPDATE med_catalog SET pil_info=?, pil_source=?, pil_last_attempt=NULL, updated_at=? WHERE id=?",
+        (pil_info, pil_source, now, item_id))
+    conn.commit()
+    conn.close()
+
+
+def mark_pil_not_found(item_id, when):
+    """Zaznamená neúspešný PIL pokus (dátum) — aby sa drahé hľadanie neopakovalo omylom."""
+    conn = get_db()
+    now = datetime.utcnow().isoformat()
+    conn.execute("UPDATE med_catalog SET pil_last_attempt=?, updated_at=? WHERE id=?",
+                 (when, now, item_id))
     conn.commit()
     conn.close()
 

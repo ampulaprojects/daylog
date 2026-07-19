@@ -17,7 +17,7 @@ from database import (
     delete_medication, set_medication_active, reorder_medications,
     get_catalog, get_catalog_item, create_catalog_item, update_catalog_item,
     delete_catalog_item, set_catalog_active, find_by_alias, update_catalog_pil,
-    get_usage_totals, get_usage_by_function, get_recent_usage
+    mark_pil_not_found, get_usage_totals, get_usage_by_function, get_recent_usage
 )
 from auth import verify_password, create_session_token, decode_session_token
 from llm import extract_events, transcribe_photo, scan_med_package, fetch_pil_info
@@ -558,6 +558,9 @@ def fetch_pil(item_id: int, user=Depends(require_auth)):
     except Exception as e:
         # LLMApiError už nesie zrozumiteľnú SK hlášku (napr. nedostatok kreditu)
         raise HTTPException(status_code=502, detail=str(e))
+    # nenašiel zdroj → zapamätaj pokus, nech sa drahé hľadanie neopakuje omylom
+    if not result["found"]:
+        mark_pil_not_found(item_id, datetime.utcnow().strftime("%Y-%m-%d"))
     return {
         "found": result["found"],
         "matched_medication": result["matched_medication"],

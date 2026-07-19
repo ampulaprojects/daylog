@@ -151,6 +151,8 @@
         .pil-src { font-size: 12px; margin: 6px 0; word-break: break-word; }
         .pil-src a { color: #1d4ed8; }
         .pil-cost { font-size: 12px; color: #6b7280; margin: 4px 0; }
+        .pil-nf-note { font-size: 12px; color: #9ca3af; align-self: center; }
+        .btn-xs { font-size: 11px; padding: 3px 8px; }
         .pil-disclaimer { font-size: 11px; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 6px 8px; margin: 8px 0; }
         .pil-actions { display: flex; gap: 8px; margin-top: 8px; }
         /* uložená PIL sekcia v detaile — vizuálne oddelená od krabičkových dát */
@@ -520,7 +522,7 @@
             ${pilSection}
             <div class="cat-btns">
                 <button class="btn-muted" onclick="startEdit(${i.id})">Upraviť</button>
-                <button class="btn-muted" onclick="fetchPil(${i.id})">🔍 ${(i.pil_info && Object.keys(i.pil_info).length) ? 'Znovu dohľadať z PIL' : 'Dohľadať z príbalového letáka'}</button>
+                ${pilButtonHtml(i)}
                 <button class="btn-muted" onclick="toggleActive(${i.id}, ${i.active})">${i.active ? 'Deaktivovať' : 'Aktivovať'}</button>
                 <button class="btn-danger" onclick="deleteItem(${i.id})">Zmazať</button>
             </div>
@@ -531,6 +533,22 @@
     // ── PIL: dohľadávanie z príbalového letáka ─────────────────────────────────
     const PIL_DISCLAIMER = 'Orientačné info z webu, over podľa príbalového letáka. Nie je náhrada za konzultáciu s lekárom.';
     let pilProposals = {};   // id -> návrh (kým sa neuloží/nezamietne)
+
+    // trojstavové tlačidlo: bez pokusu / úspech (cache) / neúspech (zapamätané)
+    function pilButtonHtml(i) {
+        if (i.pil_info && Object.keys(i.pil_info).length)
+            return `<button class="btn-muted" onclick="fetchPil(${i.id})">🔍 Znovu dohľadať z PIL</button>`;
+        if (i.pil_last_attempt)
+            return `<span class="pil-nf-note">Zdroj sa nenašiel (${esc(i.pil_last_attempt)})</span>
+                    <button class="btn-ghost btn-xs" onclick="retryPil(${i.id})">Skúsiť znova</button>`;
+        return `<button class="btn-muted" onclick="fetchPil(${i.id})">🔍 Dohľadať z príbalového letáka</button>`;
+    }
+
+    // opakovanie neúspešného hľadania — vždy s potvrdením (stojí kredit)
+    function retryPil(id) {
+        if (!confirm('Nové hľadanie na webe spotrebuje API kredit (~$0.07). Pokračovať?')) return;
+        fetchPil(id);
+    }
 
     function pilSavedHtml(i) {
         if (!i.pil_info || !Object.keys(i.pil_info).length) return '';
@@ -562,7 +580,9 @@
             }
             const data = await resp.json();
             if (!data.found) {
-                box.innerHTML = `<div class="pil-notfound">Nenašiel sa spoľahlivý zdroj — nič sa neuloží.</div>`;
+                // zaznamenané na serveri (pil_last_attempt) → reload prepne tlačidlo na stav "nenašiel"
+                showStatus('Zdroj sa nenašiel — zaznamenané (netreba znova)');
+                loadCatalog();
                 return;
             }
             pilProposals[id] = data;
