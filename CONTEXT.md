@@ -70,7 +70,6 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 - Napojenie /catalog/lookup na LLM extrakciu eventov (normalizácia názvov pri zápise)
 - Trvalé testy (tests/test_api.py) — zvážiť pri Fáze 2 liekov
 - datetime.utcnow() deprecated — nahradiť pri väčšom zásahu do database.py
-- Katalóg Krok B: dohľadávanie z PIL (príbalový leták) cez web search — doplniť info čo nie je na krabičke
 - Zvážiť EAN ako atomické pole (zatiaľ v extracted_raw)
 - Poznámka: vzorka katalógu je zaťažená doplnkami; pre liekové rozhodnutia dôležité reálne SK lieky syna
 
@@ -78,8 +77,17 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 
 - Windows git neukladá execute bit — pri nových shell skriptoch treba `git update-index --chmod=+x` pred commitom
 - ŠÚKL: kategorizačný zoznam (data.gov.sk) obsahuje len hradené lieky — Tisercin tam nie je. Plný register + PIL sú za JavaScript SPA (vyžadovalo by Playwright). Preto katalóg staviame na foto+vision, nie na registri.
+- anthropic SDK je pinnutý na 0.40.0 (staré) — web_search tool nevie zostaviť, preto fetch_pil_info ide cez raw HTTP. Upgrade SDK je samostatná budúca úloha (dotkne sa jadra — extrakcia/sken/prepis — treba pretestovať).
+- Dlhé LLM volania (web search ~95s) potrebujú nginx proxy_read_timeout — default 60s nestačí
 
 ## Changelog
+
+### 2026-07-19
+- Katalóg Krok B: dohľadávanie z príbalového letáka (PIL) cez web search — tlačidlo v detaile lieku, LEN na manuálny pokyn
+- Web search cez raw HTTP (urllib) v fetch_pil_info — obídený starý anthropic SDK 0.40.0 (nevie web_search tool), existujúce LLM volania nedotknuté (jedna premenná naraz)
+- Poistky: obmedzené na oficiálne zdroje (sukl.sk, adc.sk, ema.europa.eu), povinný zdroj (URL), len návrh na potvrdenie, disclaimer v UI, nehalucinuje (bez zdroja → nič)
+- pil_info + pil_source stĺpce — oddelené od extracted_raw (z krabičky); dve samostatné sekcie v detaile
+- nginx proxy_read_timeout zvýšený na 180s (fetch-pil trvá ~95s, default 60s by prerezal)
 
 ### 2026-07-17
 - Katalóg Krok 2: foto krabičky + Claude vision autofill (prečíta názov, silu, formu, výrobcu, kódy; nečitateľné = null, nič nevymýšľa)
