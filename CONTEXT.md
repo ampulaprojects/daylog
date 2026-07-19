@@ -67,10 +67,12 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 
 - OneDrive ako druhý backup cieľ
 - Režim liekov Fáza 1 (evidencia) — HOTOVÉ; Fáza 2 (porovnanie eventov s režimom, detekcia odchýlok) — odložené
-- Katalóg Krok 2: foto krabičky + Claude vision autofill (photo_path stĺpec pripravený)
 - Napojenie /catalog/lookup na LLM extrakciu eventov (normalizácia názvov pri zápise)
 - Trvalé testy (tests/test_api.py) — zvážiť pri Fáze 2 liekov
 - datetime.utcnow() deprecated — nahradiť pri väčšom zásahu do database.py
+- Katalóg Krok B: dohľadávanie z PIL (príbalový leták) cez web search — doplniť info čo nie je na krabičke
+- Zvážiť EAN ako atomické pole (zatiaľ v extracted_raw)
+- Poznámka: vzorka katalógu je zaťažená doplnkami; pre liekové rozhodnutia dôležité reálne SK lieky syna
 
 ## Poznámky / pasce
 
@@ -78,6 +80,14 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 - ŠÚKL: kategorizačný zoznam (data.gov.sk) obsahuje len hradené lieky — Tisercin tam nie je. Plný register + PIL sú za JavaScript SPA (vyžadovalo by Playwright). Preto katalóg staviame na foto+vision, nie na registri.
 
 ## Changelog
+
+### 2026-07-17
+- Katalóg Krok 2: foto krabičky + Claude vision autofill (prečíta názov, silu, formu, výrobcu, kódy; nečitateľné = null, nič nevymýšľa)
+- Viac fotiek na liek (galéria, rôzne strany krabičky), vision zlučuje info zo všetkých; hlavná fotka = thumbnail; výber z galérie/PC aj kamery (odstránený capture)
+- extracted_raw: neštruktúrované úložisko všetkých čitateľných údajov z krabičky (bottom-up)
+- Konsolidácia vision kľúčov na pevný SK slovník (ucinna_latka, zlozenie, davkovanie, upozornenia, skladovanie, exspiracia, sarza, ean, reg_cislo, vydaj, typ_produktu); marketing/NRV → "ostatne"; žiadne jazykové sufixy
+- rescan_catalog.py: preskenovanie existujúcich liekov novým promptom (--apply, len extracted_raw, štruktúrované polia nedotknuté)
+- Analýza 9 liekov ukázala fragmentáciu (110 kľúčov, 19 variantov "zloženia") → konsolidácia znížila na 7-11 kľúčov/liek zo slovníka
 
 ### 2026-07-15
 - Katalóg liekov (/catalog): referenčná príručka liekov s aliasmi pre normalizáciu názvov z diktovania (Orfiril/Ofriril/Ofriliril → Orfiril Long)
