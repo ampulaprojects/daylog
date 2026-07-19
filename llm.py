@@ -43,7 +43,56 @@ Príklad výstupu:
 MODEL_NAME = "claude-sonnet-4-6"
 
 
-def extract_events(text: str, entry_date: str):
+# ── Ceny (claude-sonnet-4-6) — jedno miesto, uprav keď sa zmenia ──────────────
+PRICING = {
+    "input_per_1m": 3.00,       # $ / 1M input tokenov
+    "output_per_1m": 15.00,     # $ / 1M output tokenov
+    "web_search_per_1000": 10.00,  # $ / 1000 web search dopytov
+}
+
+
+def compute_cost(input_tokens, output_tokens, web_searches=0):
+    return (input_tokens / 1_000_000 * PRICING["input_per_1m"]
+            + output_tokens / 1_000_000 * PRICING["output_per_1m"]
+            + web_searches * PRICING["web_search_per_1000"] / 1000.0)
+
+
+def _usage_from(resp_usage):
+    """Normalizuj usage (SDK objekt alebo dict) → (input, output, web_searches)."""
+    if resp_usage is None:
+        return 0, 0, 0
+    if not isinstance(resp_usage, dict):
+        try:
+            resp_usage = resp_usage.model_dump()
+        except Exception:
+            resp_usage = {
+                "input_tokens": getattr(resp_usage, "input_tokens", 0),
+                "output_tokens": getattr(resp_usage, "output_tokens", 0),
+                "server_tool_use": getattr(resp_usage, "server_tool_use", None),
+            }
+    it = resp_usage.get("input_tokens") or 0
+    ot = resp_usage.get("output_tokens") or 0
+    stu = resp_usage.get("server_tool_use") or {}
+    ws = (stu.get("web_search_requests") if isinstance(stu, dict) else 0) or 0
+    return it, ot, ws
+
+
+def _log_llm_usage(function, resp_usage, model=None, user_id=None, context=None):
+    """Zaznamenaj spotrebu do DB. TICHO — chyba logovania nesmie zhodiť flow.
+    Vráti {input_tokens, output_tokens, web_searches, cost_usd}."""
+    it, ot, ws = _usage_from(resp_usage)
+    cost = compute_cost(it, ot, ws)
+    try:
+        from database import log_usage
+        log_usage(function=function, model=model or MODEL_NAME, input_tokens=it,
+                  output_tokens=ot, web_searches=ws, cost_usd=cost,
+                  user_id=user_id, context=context)
+    except Exception:
+        pass
+    return {"input_tokens": it, "output_tokens": ot, "web_searches": ws, "cost_usd": cost}
+
+
+def extract_events(text: str, entry_date: str, user_id=None):
     client = _get_client()
     user_message = f"Dátum: {entry_date}\n\nText:\n{text}"
 
@@ -53,6 +102,7 @@ def extract_events(text: str, entry_date: str):
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_message}]
     )
+    _log_llm_usage("extract", getattr(response, "usage", None), user_id=user_id)
 
     raw = response.content[0].text.strip()
 
@@ -174,7 +224,7 @@ SCAN_MED_PROMPT = (
 _SCAN_FIELDS = ("name", "strength", "form", "manufacturer", "sukl_code", "atc_code", "package_info")
 
 
-def scan_med_package(images) -> dict:
+def scan_med_package(images, user_id=None) -> dict:
     """Prečíta údaje z fotiek krabičky lieku cez Claude vision. Prijme jeden
     obrázok (bytes) alebo zoznam obrázkov (rôzne strany tej istej krabičky) —
     v jednom volaní ich zlúči. Číta len text z obrázkov — nečitateľné/chýbajúce
@@ -196,6 +246,7 @@ def scan_med_package(images) -> dict:
         max_tokens=1536,
         messages=[{"role": "user", "content": content}]
     )
+    _log_llm_usage("scan", getattr(response, "usage", None), user_id=user_id)
 
     raw = response.content[0].text.strip()
     parsed = _parse_llm_json(raw, "")
@@ -236,7 +287,7 @@ def _clean_extracted(obj):
     return obj
 
 
-def transcribe_photo(image_bytes: bytes) -> dict:
+def transcribe_photo(image_bytes: bytes, user_id=None) -> dict:
     client = _get_client()
     resized = _resize_for_api(image_bytes)
     b64 = base64.standard_b64encode(resized).decode()
@@ -252,6 +303,7 @@ def transcribe_photo(image_bytes: bytes) -> dict:
             ]
         }]
     )
+    _log_llm_usage("transcribe", getattr(response, "usage", None), user_id=user_id)
 
     raw = response.content[0].text.strip()
     result = _parse_llm_json(raw, "")
@@ -288,6 +340,9 @@ def _pil_user_prompt(name, strength, manufacturer, atc_code):
         "Preferuj oficiálne zdroje v tomto poradí: sukl.sk, ema.europa.eu, adc.sk, "
         "oficiálna stránka výrobcu. Over, že dokument zodpovedá práve tomuto lieku "
         "(názov + sila + výrobca).\n\n"
+        "EFEKTÍVNOSŤ: Vyhľadávaj cielene, najviac 2–3 razy. Ak po pár vyhľadaniach na "
+        "oficiálnych doménach nenájdeš relevantný dokument pre tento liek, NEHĽADAJ ďalej "
+        "a vráť error (nižšie) — nezožer zbytočne veľa. Nečítaj viac dokumentov, než treba.\n\n"
         "Extrahuj informácie, ktoré typicky NIE SÚ na krabičke — najmä: úplné vedľajšie "
         "účinky, liekové interakcie, kontraindikácie, presné dávkovanie podľa veku/hmotnosti, "
         "dôležité upozornenia.\n\n"
@@ -309,8 +364,26 @@ def _pil_user_prompt(name, strength, manufacturer, atc_code):
     )
 
 
+class LLMApiError(RuntimeError):
+    """Zrozumiteľná chyba z Anthropic API (čítaná z tela odpovede)."""
+
+
+def _friendly_api_error(code, message):
+    low = (message or "").lower()
+    if "credit balance" in low:
+        return "Nedostatok API kreditu — dobite kredit v Anthropic Console."
+    if code == 429 or "rate limit" in low:
+        return "API rate limit — skús o chvíľu znova."
+    if code == 401 or "authentication" in low:
+        return "Neplatný API kľúč."
+    if code == 529 or "overloaded" in low:
+        return "API je preťažené — skús o chvíľu znova."
+    return f"API chyba {code}: {message}"
+
+
 def _anthropic_http(payload: dict) -> dict:
-    """Raw POST na /v1/messages — obchádza starú SDK kvôli web_search toolu."""
+    """Raw POST na /v1/messages — obchádza starú SDK kvôli web_search toolu.
+    Pri chybe prečíta telo odpovede a vyhodí zrozumiteľnú hlášku (nie holé '400')."""
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(
         "https://api.anthropic.com/v1/messages", data=body,
@@ -319,24 +392,37 @@ def _anthropic_http(payload: dict) -> dict:
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
         })
-    with urllib.request.urlopen(req, timeout=180) as r:
-        return json.loads(r.read())
+    try:
+        with urllib.request.urlopen(req, timeout=180) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        raw = ""
+        try:
+            raw = e.read().decode("utf-8")
+            message = json.loads(raw).get("error", {}).get("message") or raw
+        except Exception:
+            message = raw or str(e)
+        raise LLMApiError(_friendly_api_error(e.code, message)) from None
+    except urllib.error.URLError as e:
+        raise LLMApiError(f"Sieťová chyba pri volaní API: {e.reason}") from None
 
 
-def fetch_pil_info(name, strength=None, manufacturer=None, atc_code=None) -> dict:
+def fetch_pil_info(name, strength=None, manufacturer=None, atc_code=None,
+                   user_id=None, context=None) -> dict:
     """Dohľadá info z príbalového letáka cez web search. Vráti NÁVRH (neukladá).
-    VŽDY vyžaduje zdroj (URL) — bez neho found=False."""
+    VŽDY vyžaduje zdroj (URL) — bez neho found=False. Súčasťou výsledku je aj
+    'usage' (tokeny + cena tohto dohľadania) — PIL je jediná funkcia čo cenu ukazuje."""
     messages = [{"role": "user", "content": _pil_user_prompt(name, strength, manufacturer, atc_code)}]
     # basic web_search (bez dynamic-filtering code exec) + limit vyhľadávaní +
     # obmedzenie na oficiálne zdroje → rýchlejšie a bezpečnejšie (menšie riziko zlého zdroja)
     tools = [{
         "type": "web_search_20250305", "name": "web_search",
-        "max_uses": 5,
+        "max_uses": 3,   # strop: bránime tomu, aby jeden PIL zožral 100k+ tokenov
         "allowed_domains": ["sukl.sk", "adc.sk", "ema.europa.eu", "adcc.sk"],
     }]
 
     raw_text = ""
-    # web_search beží server-side; pri limite iterácií vráti pause_turn → pokračuj
+    in_tok = out_tok = web_s = 0   # kumulatívne cez pause_turn iterácie
     for _ in range(4):
         data = _anthropic_http({
             "model": MODEL_NAME,
@@ -345,12 +431,25 @@ def fetch_pil_info(name, strength=None, manufacturer=None, atc_code=None) -> dic
             "tools": tools,
             "messages": messages,
         })
+        it, ot, ws = _usage_from(data.get("usage"))
+        in_tok += it; out_tok += ot; web_s += ws
         content = data.get("content", [])
         raw_text = "".join(b.get("text", "") for b in content if b.get("type") == "text")
         if data.get("stop_reason") == "pause_turn":
             messages.append({"role": "assistant", "content": content})
             continue
         break
+
+    # zaznamenaj spotrebu (jeden riadok za celé dohľadanie) + priprav usage do výsledku
+    cost = compute_cost(in_tok, out_tok, web_s)
+    try:
+        from database import log_usage
+        log_usage(function="pil", model=MODEL_NAME, input_tokens=in_tok, output_tokens=out_tok,
+                  web_searches=web_s, cost_usd=cost, user_id=user_id, context=context)
+    except Exception:
+        pass
+    usage = {"input_tokens": in_tok, "output_tokens": out_tok,
+             "web_searches": web_s, "cost_usd": cost}
 
     parsed = _parse_llm_json(raw_text, "")
     if not isinstance(parsed, dict):
@@ -363,7 +462,8 @@ def fetch_pil_info(name, strength=None, manufacturer=None, atc_code=None) -> dic
     # bez reálneho zdroja alebo s errorom → nič sa neponúkne na uloženie
     if parsed.get("error") or not source_url:
         return {"found": False, "matched_medication": parsed.get("najdeny_liek"),
-                "pil_info": {}, "source_url": None, "source_name": None, "raw": raw_text}
+                "pil_info": {}, "source_url": None, "source_name": None,
+                "usage": usage, "raw": raw_text}
 
     reserved = {"zdroj", "zdroj_nazov", "najdeny_liek", "error"}
     pil_info = _clean_extracted({k: v for k, v in parsed.items() if k not in reserved})
@@ -374,6 +474,7 @@ def fetch_pil_info(name, strength=None, manufacturer=None, atc_code=None) -> dic
         "pil_info": pil_info,
         "source_url": source_url,
         "source_name": parsed.get("zdroj_nazov"),
+        "usage": usage,
         "raw": raw_text,
     }
 

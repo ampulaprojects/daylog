@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>daylog — Spotreba</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, sans-serif; margin: 0; color: #111; }
+        .page-wrap { max-width: 1100px; margin: 0 auto; padding: 20px 16px; }
+        h1 { font-size: 20px; }
+        h2 { font-size: 15px; font-weight: 600; margin: 22px 0 10px; }
+        .page-header { margin-bottom: 16px; }
+        a { color: #2563eb; }
+
+        /* súhrnné karty */
+        .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+        @media (max-width: 640px) { .cards { grid-template-columns: 1fr; } }
+        .card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px; background: #fafafa; }
+        .card .lbl { font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.04em; }
+        .card .cost { font-size: 26px; font-weight: 700; margin-top: 4px; }
+        .card .sub { font-size: 12px; color: #6b7280; margin-top: 4px; }
+
+        /* filter */
+        .filter { display: flex; gap: 6px; margin: 8px 0 4px; }
+        .filter button { font-size: 13px; padding: 5px 12px; border: 1px solid #d1d5db; background: #fff; color: #374151; border-radius: 6px; cursor: pointer; }
+        .filter button.active { background: #111; color: #fff; border-color: #111; }
+
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { text-align: right; padding: 7px 8px; border-bottom: 1px solid #f0f0f0; }
+        th:first-child, td:first-child { text-align: left; }
+        th { font-size: 11px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.03em; font-weight: 600; }
+        tbody tr:hover { background: #fafafa; }
+        .fn { font-weight: 600; }
+        .num { font-variant-numeric: tabular-nums; }
+        .cost-cell { font-weight: 600; color: #166534; }
+        .table-wrap { overflow-x: auto; }
+        .empty { color: #9ca3af; font-size: 14px; padding: 20px 0; }
+        .recent-time { color: #6b7280; font-size: 12px; }
+    </style>
+</head>
+<body>
+<div class="page-wrap">
+    <div class="page-header">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+            <h1>daylog — Spotreba LLM</h1>
+            <div style="display:flex;gap:10px;align-items:center">
+                <a href="/" style="font-size:13px;color:#888;text-decoration:none">Záznamy</a>
+                <a href="/catalog" style="font-size:13px;color:#888;text-decoration:none">Katalóg</a>
+                <form method="POST" action="/logout">
+                    <button type="submit" style="padding:6px 12px;font-size:13px;background:#eee;color:#333;border:none;border-radius:6px;cursor:pointer">Odhlásiť</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="cards" id="cards"></div>
+
+    <h2>Rozpad podľa funkcie</h2>
+    <div class="filter">
+        <button data-p="day" onclick="setPeriod('day')">Dnes</button>
+        <button data-p="month" onclick="setPeriod('month')">Tento mesiac</button>
+        <button data-p="all" class="active" onclick="setPeriod('all')">Celkovo</button>
+    </div>
+    <div class="table-wrap">
+        <table id="byFn">
+            <thead><tr>
+                <th>Funkcia</th><th>Volaní</th><th>Input</th><th>Output</th><th>Web search</th><th>Cena</th>
+            </tr></thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <h2>Posledné volania</h2>
+    <div class="table-wrap">
+        <table id="recent">
+            <thead><tr>
+                <th>Čas (UTC)</th><th>Funkcia</th><th>Kto</th><th>Input</th><th>Output</th><th>Web</th><th>Cena</th>
+            </tr></thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    const FN_LABELS = { extract: 'Extrakcia eventov', scan: 'Sken krabičky',
+                        transcribe: 'Prepis fotky', pil: 'PIL dohľadávanie' };
+    let period = 'all';
+
+    function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function fnLabel(f) { return FN_LABELS[f] || f; }
+    function num(n) { return (n || 0).toLocaleString('sk-SK'); }
+    function usd(c) { return '$' + (c || 0).toFixed(c < 1 ? 3 : 2); }
+    function fmtTime(iso) { return iso ? iso.replace('T', ' ').slice(0, 16) : ''; }
+
+    async function load() {
+        const r = await fetch(`/usage/data?period=${period}`, { headers: { 'Accept': 'application/json' } });
+        if (r.status === 401 || r.status === 403) { location.href = '/'; return; }
+        const d = await r.json();
+        renderCards(d.summary);
+        renderByFn(d.by_function);
+        renderRecent(d.recent);
+    }
+
+    function renderCards(sum) {
+        const card = (lbl, t) => `<div class="card">
+            <div class="lbl">${lbl}</div>
+            <div class="cost">${usd(t.cost_usd)}</div>
+            <div class="sub">${num(t.calls)} volaní · ${num((t.input_tokens||0)+(t.output_tokens||0))} tokenov${t.web_searches ? ' · '+num(t.web_searches)+' web' : ''}</div>
+        </div>`;
+        document.getElementById('cards').innerHTML =
+            card('Dnes', sum.day) + card('Tento mesiac', sum.month) + card('Celkovo', sum.all);
+    }
+
+    function renderByFn(rows) {
+        const tb = document.querySelector('#byFn tbody');
+        if (!rows.length) { tb.innerHTML = `<tr><td colspan="6" class="empty">Žiadne volania za toto obdobie.</td></tr>`; return; }
+        tb.innerHTML = rows.map(r => `<tr>
+            <td class="fn">${esc(fnLabel(r.function))}</td>
+            <td class="num">${num(r.calls)}</td>
+            <td class="num">${num(r.input_tokens)}</td>
+            <td class="num">${num(r.output_tokens)}</td>
+            <td class="num">${num(r.web_searches)}</td>
+            <td class="num cost-cell">${usd(r.cost_usd)}</td>
+        </tr>`).join('');
+    }
+
+    function renderRecent(rows) {
+        const tb = document.querySelector('#recent tbody');
+        if (!rows.length) { tb.innerHTML = `<tr><td colspan="7" class="empty">Zatiaľ žiadne volania.</td></tr>`; return; }
+        tb.innerHTML = rows.map(r => `<tr>
+            <td class="recent-time">${esc(fmtTime(r.created_at))}</td>
+            <td class="fn">${esc(fnLabel(r.function))}</td>
+            <td>${esc(r.author || '—')}</td>
+            <td class="num">${num(r.input_tokens)}</td>
+            <td class="num">${num(r.output_tokens)}</td>
+            <td class="num">${num(r.web_searches)}</td>
+            <td class="num cost-cell">${usd(r.cost_usd)}</td>
+        </tr>`).join('');
+    }
+
+    function setPeriod(p) {
+        period = p;
+        document.querySelectorAll('.filter button').forEach(b =>
+            b.classList.toggle('active', b.dataset.p === p));
+        load();
+    }
+
+    load();
+</script>
+</body>
+</html>

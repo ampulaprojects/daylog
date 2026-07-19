@@ -16,7 +16,8 @@ from database import (
     get_medications, create_medication, update_medication,
     delete_medication, set_medication_active, reorder_medications,
     get_catalog, get_catalog_item, create_catalog_item, update_catalog_item,
-    delete_catalog_item, set_catalog_active, find_by_alias, update_catalog_pil
+    delete_catalog_item, set_catalog_active, find_by_alias, update_catalog_pil,
+    get_usage_totals, get_usage_by_function, get_recent_usage
 )
 from auth import verify_password, create_session_token, decode_session_token
 from llm import extract_events, transcribe_photo, scan_med_package, fetch_pil_info
@@ -46,6 +47,12 @@ def get_session_user(session: Optional[str] = Cookie(None)):
 def require_auth(user=Depends(get_session_user)):
     if not user:
         raise HTTPException(status_code=401, detail="Nie si prihlásený")
+    return user
+
+
+def require_admin(user=Depends(require_auth)):
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Len pre admina")
     return user
 
 
@@ -79,6 +86,33 @@ def meds_page(session: Optional[str] = Cookie(None)):
 
 # Note: GET /catalog is defined once, in the Medications/catalog section below —
 # it serves the HTML page for browsers and JSON for API clients (Accept header).
+
+
+@app.get("/usage")
+def usage_page(session: Optional[str] = Cookie(None)):
+    uid = decode_session_token(session) if session else None
+    user = get_user_by_id(uid) if uid else None
+    if not user:
+        return RedirectResponse(url="/login", status_code=302)
+    if user["role"] != "admin":
+        return RedirectResponse(url="/", status_code=302)
+    return FileResponse("static/usage.html")
+
+
+@app.get("/usage/data")
+def usage_data(period: str = "all", user=Depends(require_admin)):
+    if period not in ("day", "month", "all"):
+        period = "all"
+    return {
+        "period": period,
+        "summary": {
+            "day": get_usage_totals("day"),
+            "month": get_usage_totals("month"),
+            "all": get_usage_totals("all"),
+        },
+        "by_function": get_usage_by_function(period),
+        "recent": get_recent_usage(30),
+    }
 
 
 # ── Auth endpoints ────────────────────────────────────────────────────────────
@@ -165,7 +199,7 @@ async def entries_transcribe(file: UploadFile = File(...), user=Depends(require_
     with open(orig_path, "wb") as f:
         f.write(contents)
     try:
-        result = transcribe_photo(contents)
+        result = transcribe_photo(contents, user_id=user["id"])
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Chyba prepisu: {e}")
     return {
@@ -209,7 +243,8 @@ def _enrich_with_catalog(events: list) -> None:
 @app.post("/entries/extract")
 def entries_extract(body: ExtractRequest, user=Depends(require_auth)):
     try:
-        events, cleaned_text, llm_raw, llm_model = extract_events(body.text, body.entry_date)
+        events, cleaned_text, llm_raw, llm_model = extract_events(
+            body.text, body.entry_date, user_id=user["id"])
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"LLM chyba: {e}")
     _enrich_with_catalog(events)
@@ -487,7 +522,7 @@ async def catalog_scan(files: List[UploadFile] = File(...), user=Depends(require
         photos.append(f"uploads/{filename}")
         images.append(contents)
     try:
-        result = scan_med_package(images)
+        result = scan_med_package(images, user_id=user["id"])
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Chyba skenu: {e}")
     extracted = result.get("extracted_all") or {}
@@ -518,15 +553,18 @@ def fetch_pil(item_id: int, user=Depends(require_auth)):
         result = fetch_pil_info(
             name=item["canonical_name"], strength=item.get("strength"),
             manufacturer=item.get("manufacturer"), atc_code=item.get("atc_code"),
+            user_id=user["id"], context=f"catalog:{item_id}",
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Chyba dohľadávania: {e}")
+        # LLMApiError už nesie zrozumiteľnú SK hlášku (napr. nedostatok kreditu)
+        raise HTTPException(status_code=502, detail=str(e))
     return {
         "found": result["found"],
         "matched_medication": result["matched_medication"],
         "pil_info": result["pil_info"],
         "source_url": result["source_url"],
         "source_name": result["source_name"],
+        "usage": result.get("usage"),   # tokeny + cena TOHTO dohľadania (PIL výnimka)
     }
 
 

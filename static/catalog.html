@@ -150,6 +150,7 @@
         .pil-matched .lbl { font-size: 11px; font-weight: 600; color: #1e40af; text-transform: uppercase; }
         .pil-src { font-size: 12px; margin: 6px 0; word-break: break-word; }
         .pil-src a { color: #1d4ed8; }
+        .pil-cost { font-size: 12px; color: #6b7280; margin: 4px 0; }
         .pil-disclaimer { font-size: 11px; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 6px 8px; margin: 8px 0; }
         .pil-actions { display: flex; gap: 8px; margin-top: 8px; }
         /* uložená PIL sekcia v detaile — vizuálne oddelená od krabičkových dát */
@@ -177,6 +178,7 @@
                 <a href="/" style="font-size:13px;color:#888;text-decoration:none">Záznamy</a>
                 <a href="/meds" style="font-size:13px;color:#888;text-decoration:none">Lieky</a>
                 <a href="/catalog" style="font-size:13px;color:#111;font-weight:600;text-decoration:none">Katalóg</a>
+                <a href="/usage" id="usageLink" style="display:none;font-size:13px;color:#888;text-decoration:none">Spotreba</a>
                 <a href="/profile" style="font-size:13px;color:#888;text-decoration:none">Profil</a>
                 <form method="POST" action="/logout">
                     <button type="submit" class="btn-ghost" style="padding:6px 12px;font-size:13px">Odhlásiť</button>
@@ -518,7 +520,7 @@
             ${pilSection}
             <div class="cat-btns">
                 <button class="btn-muted" onclick="startEdit(${i.id})">Upraviť</button>
-                <button class="btn-muted" onclick="fetchPil(${i.id})">🔍 Dohľadať z príbalového letáka</button>
+                <button class="btn-muted" onclick="fetchPil(${i.id})">🔍 ${(i.pil_info && Object.keys(i.pil_info).length) ? 'Znovu dohľadať z PIL' : 'Dohľadať z príbalového letáka'}</button>
                 <button class="btn-muted" onclick="toggleActive(${i.id}, ${i.active})">${i.active ? 'Deaktivovať' : 'Aktivovať'}</button>
                 <button class="btn-danger" onclick="deleteItem(${i.id})">Zmazať</button>
             </div>
@@ -553,7 +555,11 @@
         try {
             const resp = await fetch(`/catalog/${id}/fetch-pil`, { method: 'POST', headers: { 'Accept': 'application/json' } });
             if (resp.status === 401) { location.href = '/login'; return; }
-            if (!resp.ok) throw new Error(await resp.text());
+            if (!resp.ok) {
+                let msg = await resp.text();
+                try { msg = JSON.parse(msg).detail || msg; } catch (e) {}
+                throw new Error(msg);
+            }
             const data = await resp.json();
             if (!data.found) {
                 box.innerHTML = `<div class="pil-notfound">Nenašiel sa spoľahlivý zdroj — nič sa neuloží.</div>`;
@@ -573,9 +579,14 @@
         const srcLine = data.source_url
             ? `<div class="pil-src">Zdroj: <a href="${esc(data.source_url)}" target="_blank" rel="noopener">${esc(data.source_name || data.source_url)}</a></div>`
             : '';
+        const u = data.usage;
+        const costLine = u
+            ? `<div class="pil-cost">Toto dohľadanie: ~${((u.input_tokens||0)+(u.output_tokens||0)).toLocaleString('sk-SK')} tokenov${u.web_searches ? ', '+u.web_searches+'× web search' : ''}, ~$${(u.cost_usd||0).toFixed(3)}</div>`
+            : '';
         return `<div class="pil-result">
             <div class="pil-matched"><span class="lbl">Našiel som</span> ${esc(data.matched_medication || '—')}</div>
             ${srcLine}
+            ${costLine}
             <div class="pil-disclaimer">${PIL_DISCLAIMER}</div>
             <div class="ex-body" style="padding-left:0">${body}</div>
             <div class="pil-actions">
@@ -856,6 +867,11 @@
         clearTimeout(statusTimer);
         statusTimer = setTimeout(() => s.style.display = 'none', 3000);
     }
+
+    // Spotreba link len pre admina
+    fetch('/me').then(r => r.ok ? r.json() : null).then(u => {
+        if (u && u.role === 'admin') document.getElementById('usageLink').style.display = '';
+    }).catch(() => {});
 
     loadCatalog();
 </script>

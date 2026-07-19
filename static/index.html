@@ -270,6 +270,7 @@
             <div style="display:flex;gap:10px;align-items:center">
                 <a href="/meds" style="font-size:13px;color:#888;text-decoration:none">Lieky</a>
                 <a href="/catalog" style="font-size:13px;color:#888;text-decoration:none">Katalóg</a>
+                <a href="/usage" id="usageLink" style="display:none;font-size:13px;color:#888;text-decoration:none">Spotreba</a>
                 <a href="/profile" style="font-size:13px;color:#888;text-decoration:none">Profil</a>
                 <form method="POST" action="/logout">
                     <button type="submit" class="btn-ghost" style="padding:6px 12px;font-size:13px">Odhlásiť</button>
@@ -1230,6 +1231,11 @@
         loadCatalogList();
         loadEntries();
         renderTypeChips();
+
+        // Spotreba link len pre admina
+        fetch('/me').then(r => r.ok ? r.json() : null).then(u => {
+            if (u && u.role === 'admin') document.getElementById('usageLink').style.display = '';
+        }).catch(() => {});
 
         // ── Diktovanie ───────────────────────────────────────────────────────
 

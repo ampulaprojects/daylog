@@ -127,6 +127,20 @@ def init_db():
            WHERE photo_path IS NOT NULL AND photo_path != ''
              AND (photos IS NULL OR photos = '[]' OR photos = '')"""
     )
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS llm_usage (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            function TEXT NOT NULL,
+            model TEXT,
+            input_tokens INTEGER DEFAULT 0,
+            output_tokens INTEGER DEFAULT 0,
+            web_searches INTEGER DEFAULT 0,
+            cost_usd REAL DEFAULT 0,
+            user_id INTEGER,
+            context TEXT
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -581,3 +595,72 @@ def find_by_alias(name):
         if any(str(a).strip().lower() == needle for a in aliases):
             return item
     return None
+
+
+# ── LLM usage (tiché sledovanie spotreby tokenov / ceny) ─────────────────────
+
+def log_usage(function, model, input_tokens, output_tokens, web_searches, cost_usd,
+              user_id=None, context=None):
+    conn = get_db()
+    now = datetime.utcnow().isoformat()
+    conn.execute(
+        """INSERT INTO llm_usage
+           (created_at, function, model, input_tokens, output_tokens, web_searches,
+            cost_usd, user_id, context)
+           VALUES (?,?,?,?,?,?,?,?,?)""",
+        (now, function, model, int(input_tokens or 0), int(output_tokens or 0),
+         int(web_searches or 0), float(cost_usd or 0), user_id, context)
+    )
+    conn.commit()
+    conn.close()
+
+
+def _usage_where(period):
+    """Vráti (where_sql, params) pre filter obdobia. period: day|month|all."""
+    now = datetime.utcnow()
+    if period == "day":
+        return "WHERE created_at >= ?", [now.strftime("%Y-%m-%d")]
+    if period == "month":
+        return "WHERE created_at >= ?", [now.strftime("%Y-%m-01")]
+    return "", []
+
+
+def get_usage_totals(period="all"):
+    where, params = _usage_where(period)
+    conn = get_db()
+    row = conn.execute(
+        f"""SELECT COUNT(*) AS calls,
+                   COALESCE(SUM(input_tokens),0) AS input_tokens,
+                   COALESCE(SUM(output_tokens),0) AS output_tokens,
+                   COALESCE(SUM(web_searches),0) AS web_searches,
+                   COALESCE(SUM(cost_usd),0) AS cost_usd
+            FROM llm_usage {where}""", params).fetchone()
+    conn.close()
+    return dict(row)
+
+
+def get_usage_by_function(period="all"):
+    where, params = _usage_where(period)
+    conn = get_db()
+    rows = conn.execute(
+        f"""SELECT function,
+                   COUNT(*) AS calls,
+                   COALESCE(SUM(input_tokens),0) AS input_tokens,
+                   COALESCE(SUM(output_tokens),0) AS output_tokens,
+                   COALESCE(SUM(web_searches),0) AS web_searches,
+                   COALESCE(SUM(cost_usd),0) AS cost_usd
+            FROM llm_usage {where}
+            GROUP BY function ORDER BY cost_usd DESC""", params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def get_recent_usage(limit=30):
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT u.created_at, u.function, u.model, u.input_tokens, u.output_tokens,
+                  u.web_searches, u.cost_usd, u.context, us.username AS author
+           FROM llm_usage u LEFT JOIN users us ON u.user_id = us.id
+           ORDER BY u.id DESC LIMIT ?""", (limit,)).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
