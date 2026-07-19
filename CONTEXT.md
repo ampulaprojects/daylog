@@ -79,10 +79,18 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 - ŠÚKL: kategorizačný zoznam (data.gov.sk) obsahuje len hradené lieky — Tisercin tam nie je. Plný register + PIL sú za JavaScript SPA (vyžadovalo by Playwright). Preto katalóg staviame na foto+vision, nie na registri.
 - anthropic SDK je pinnutý na 0.40.0 (staré) — web_search tool nevie zostaviť, preto fetch_pil_info ide cez raw HTTP. Upgrade SDK je samostatná budúca úloha (dotkne sa jadra — extrakcia/sken/prepis — treba pretestovať).
 - Dlhé LLM volania (web search ~95s) potrebujú nginx proxy_read_timeout — default 60s nestačí
+- Web search vkladá plný text nájdených stránok do input tokenov — jeden PIL ~40-98k tokenov. Preto cache + limit web searchov.
+- PIL nájde len reálne SK lieky (sukl.sk/adc.sk); zahraničné doplnky poctivo vráti "nenašiel" — to je zámer (poistka proti halucinácii)
 
 ## Changelog
 
 ### 2026-07-19
+- Sledovanie spotreby LLM: tabuľka llm_usage, tiché zbieranie pri každom volaní (input/output tokeny, web searches, cena)
+- Stránka /usage (len admin): rozpad podľa funkcie (extract/scan/transcribe/pil), súčty za deň/mesiac/celkovo, posledné volania
+- Ceny natvrdo v config (claude-sonnet-4-6: $3/1M input, $15/1M output, web search $10/1000) — upraviteľné
+- PIL cena viditeľná v paneli dohľadávania; PIL ~34× drahšie než extrakcia ($0.169 vs $0.005)
+- PIL optimalizácia: cache (raz dohľadané = uložené, "Znovu dohľadať" funguje), limit web searchov (max 3, efektívnostná inštrukcia) → -56% tokenov
+- Oprava error handling v _anthropic_http: číta telo chybovej odpovede, zrozumiteľná hláška (napr. "Nedostatok API kreditu") namiesto holého "400"
 - Katalóg Krok B: dohľadávanie z príbalového letáka (PIL) cez web search — tlačidlo v detaile lieku, LEN na manuálny pokyn
 - Web search cez raw HTTP (urllib) v fetch_pil_info — obídený starý anthropic SDK 0.40.0 (nevie web_search tool), existujúce LLM volania nedotknuté (jedna premenná naraz)
 - Poistky: obmedzené na oficiálne zdroje (sukl.sk, adc.sk, ema.europa.eu), povinný zdroj (URL), len návrh na potvrdenie, disclaimer v UI, nehalucinuje (bez zdroja → nič)
