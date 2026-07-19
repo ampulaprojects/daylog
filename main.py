@@ -17,7 +17,8 @@ from database import (
     delete_medication, set_medication_active, reorder_medications,
     get_catalog, get_catalog_item, create_catalog_item, update_catalog_item,
     delete_catalog_item, set_catalog_active, find_by_alias, update_catalog_pil,
-    mark_pil_not_found, get_usage_totals, get_usage_by_function, get_recent_usage
+    mark_pil_not_found, merge_catalog_items,
+    get_usage_totals, get_usage_by_function, get_recent_usage
 )
 from auth import verify_password, create_session_token, decode_session_token
 from llm import extract_events, transcribe_photo, scan_med_package, fetch_pil_info
@@ -584,6 +585,31 @@ def save_pil(item_id: int, body: PilSaveBody, user=Depends(require_auth)):
     }, ensure_ascii=False)
     update_catalog_pil(item_id, json.dumps(body.pil_info, ensure_ascii=False), pil_source)
     return {"id": item_id}
+
+
+class MergeBody(BaseModel):
+    keep_id: int
+    merge_id: int
+    field_choices: dict = {}   # {pole: 'keep'|'merge'} pre polia kde sa líšia
+    main_photo: Optional[str] = None
+
+
+@app.post("/catalog/merge")
+def merge_catalog(body: MergeBody, user=Depends(require_auth)):
+    """Zlúči liek merge_id do keep_id (transakčne: uprav A → prepoj eventy →
+    over osirené → zmaž B). Vráti súhrn vrátane počtu presunutých eventov."""
+    if body.keep_id == body.merge_id:
+        raise HTTPException(status_code=400, detail="Nemôžeš zlúčiť liek sám so sebou")
+    if not get_catalog_item(body.keep_id) or not get_catalog_item(body.merge_id):
+        raise HTTPException(status_code=404, detail="Jeden z liekov nenájdený")
+    try:
+        summary = merge_catalog_items(
+            keep_id=body.keep_id, merge_id=body.merge_id,
+            field_choices=body.field_choices, main_photo=body.main_photo,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Zlúčenie zlyhalo: {e}")
+    return summary
 
 
 @app.put("/catalog/{item_id}")

@@ -161,6 +161,28 @@
         .pil-saved[open] > summary { border-bottom: 1px solid #dbeafe; }
         .pil-saved .ex-body { padding: 8px 10px; }
 
+        /* ── Zlúčenie liekov ─────────────────────────────────────────────── */
+        .merge-panel { margin-top: 10px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; padding: 10px; }
+        .merge-panel h4 { font-size: 13px; margin-bottom: 8px; }
+        .merge-pick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+        .merge-pick select { font-size: 13px; padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 6px; max-width: 240px; }
+        .merge-cmp { margin-top: 10px; font-size: 12px; }
+        .merge-cmp table { width: 100%; border-collapse: collapse; }
+        .merge-cmp th, .merge-cmp td { padding: 5px 6px; border-bottom: 1px solid #f0f0f0; vertical-align: top; text-align: left; }
+        .merge-cmp th { font-size: 10px; color: #9ca3af; text-transform: uppercase; font-weight: 600; }
+        .merge-field { font-size: 11px; font-weight: 600; color: #6b7280; width: 110px; }
+        .merge-val { white-space: pre-wrap; word-break: break-word; }
+        .merge-val.chosen { background: #ecfdf5; }
+        .merge-opt { display: flex; gap: 6px; align-items: flex-start; }
+        .merge-opt input { margin-top: 3px; }
+        .merge-auto { color: #9ca3af; font-size: 10px; }
+        .merge-photos { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0; }
+        .merge-photo { text-align: center; }
+        .merge-photo img { width: 54px; height: 54px; object-fit: cover; border-radius: 5px; border: 1px solid #e5e7eb; }
+        .merge-photo.main img { border: 2px solid #2563eb; }
+        .merge-warn { font-size: 11px; color: #92400e; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 6px 8px; margin: 8px 0; }
+        .merge-actions { display: flex; gap: 8px; margin-top: 8px; }
+
         /* ── Lightbox ────────────────────────────────────────────────────── */
         #photoOverlay {
             display: none; position: fixed; inset: 0;
@@ -523,10 +545,12 @@
             <div class="cat-btns">
                 <button class="btn-muted" onclick="startEdit(${i.id})">Upraviť</button>
                 ${pilButtonHtml(i)}
+                <button class="btn-muted" onclick="startMerge(${i.id})">Zlúčiť s iným liekom</button>
                 <button class="btn-muted" onclick="toggleActive(${i.id}, ${i.active})">${i.active ? 'Deaktivovať' : 'Aktivovať'}</button>
                 <button class="btn-danger" onclick="deleteItem(${i.id})">Zmazať</button>
             </div>
             <div id="pil-proposal-${i.id}"></div>
+            <div id="merge-panel-${i.id}"></div>
         </div>`;
     }
 
@@ -548,6 +572,135 @@
     function retryPil(id) {
         if (!confirm('Nové hľadanie na webe spotrebuje API kredit (~$0.07). Pokračovať?')) return;
         fetchPil(id);
+    }
+
+    // ── Zlúčenie duplicitných liekov ───────────────────────────────────────────
+    const MERGE_FIELDS = [
+        ['canonical_name', 'Názov'], ['kind', 'Typ'], ['strength', 'Sila'], ['form', 'Forma'],
+        ['manufacturer', 'Výrobca'], ['sukl_code', 'ŠÚKL'], ['atc_code', 'ATC'],
+        ['description', 'Popis'], ['side_effects', 'Vedľajšie účinky'], ['personal_notes', 'Pozorovania'],
+        ['extracted_raw', 'Údaje z krabičky'], ['pil_info', 'PIL info'], ['pil_source', 'PIL zdroj'],
+    ];
+
+    function mergeRepr(item, key) {
+        const v = item[key];
+        if (v == null || v === '') return '—';
+        if (key === 'pil_source') return v.url ? esc(v.url) : (typeof v === 'object' ? '—' : esc(v));
+        if (key === 'pil_info') return (v && typeof v === 'object') ? `${Object.keys(v).length} kľúčov` : '—';
+        if (key === 'extracted_raw') { try { const o = JSON.parse(v); return `${Object.keys(o).length} kľúčov`; } catch (e) { return esc(String(v).slice(0, 60)); } }
+        return esc(String(v));
+    }
+    function mergeRaw(item, key) {
+        const v = item[key];
+        if (v == null || v === '') return '';
+        if (typeof v === 'object') return JSON.stringify(v);
+        return String(v);
+    }
+
+    function startMerge(keepId) {
+        const others = items.filter(x => x.active && x.id !== keepId)
+            .sort((a, b) => a.canonical_name.localeCompare(b.canonical_name, 'sk', { sensitivity: 'base' }));
+        const A = items.find(x => x.id === keepId);
+        const opts = others.map(x => `<option value="${x.id}">${esc(x.canonical_name)}${x.strength ? ' · ' + esc(x.strength) : ''}</option>`).join('');
+        document.getElementById('merge-panel-' + keepId).innerHTML = `
+            <div class="merge-panel">
+                <h4>Zlúčiť do „${esc(A.canonical_name)}" (ostane) — druhý liek zanikne</h4>
+                <div class="merge-pick">
+                    <span>Zlúčiť tento liek:</span>
+                    <select id="merge-target-${keepId}" onchange="renderMergeCompare(${keepId}, this.value ? parseInt(this.value) : null)">
+                        <option value="">— vyber liek —</option>${opts}
+                    </select>
+                    <button class="btn-ghost btn-sm" onclick="cancelMerge(${keepId})">Zrušiť</button>
+                </div>
+                <div id="merge-cmp-${keepId}"></div>
+            </div>`;
+    }
+
+    function cancelMerge(keepId) {
+        const el = document.getElementById('merge-panel-' + keepId);
+        if (el) el.innerHTML = '';
+    }
+
+    function renderMergeCompare(keepId, mergeId) {
+        const box = document.getElementById('merge-cmp-' + keepId);
+        if (!mergeId) { box.innerHTML = ''; return; }
+        const A = items.find(x => x.id === keepId);
+        const B = items.find(x => x.id === mergeId);
+
+        const rows = MERGE_FIELDS.map(([key, label]) => {
+            const ra = mergeRaw(A, key), rb = mergeRaw(B, key);
+            const differ = ra && rb && ra !== rb;
+            const cellA = `<td class="merge-val">${mergeRepr(A, key)}</td>`;
+            const cellB = `<td class="merge-val">${mergeRepr(B, key)}</td>`;
+            if (differ) {
+                return `<tr>
+                    <td class="merge-field">${label}</td>
+                    <td><label class="merge-opt"><input type="radio" name="mf-${keepId}-${key}" value="keep" checked> <span>${mergeRepr(A, key)}</span></label></td>
+                    <td><label class="merge-opt"><input type="radio" name="mf-${keepId}-${key}" value="merge"> <span>${mergeRepr(B, key)}</span></label></td>
+                </tr>`;
+            }
+            // auto — kde má hodnotu len jeden (alebo sú rovnaké)
+            return `<tr><td class="merge-field">${label}</td>${cellA}${cellB}</tr>`;
+        }).join('');
+
+        // aliasy (zlúčené, náhľad)
+        const mergedAliases = [...new Set([...(A.aliases || []), ...(B.aliases || []), B.canonical_name]
+            .map(x => (x || '').trim()).filter(Boolean))]
+            .filter(x => x.toLowerCase() !== A.canonical_name.toLowerCase());
+        // fotky (zlúčené) + výber hlavnej
+        const mergedPhotos = [...new Set([...(A.photos || []), ...(B.photos || [])])];
+        const defMain = A.photo_path || mergedPhotos[0] || '';
+        const photosHtml = mergedPhotos.length ? `
+            <div style="margin-top:6px"><span class="merge-field">Hlavná fotka</span></div>
+            <div class="merge-photos">${mergedPhotos.map(p => `
+                <label class="merge-photo ${p === defMain ? 'main' : ''}">
+                    <img src="${thumbUrl(p)}" alt="">
+                    <div><input type="radio" name="merge-main-${keepId}" value="${esc(p)}" ${p === defMain ? 'checked' : ''}></div>
+                </label>`).join('')}</div>` : '';
+
+        box.innerHTML = `
+            <div class="merge-cmp">
+                <table>
+                    <thead><tr><th>Pole</th><th>Ostane (${esc(A.canonical_name)})</th><th>Zanikne (${esc(B.canonical_name)})</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+                <div style="margin-top:8px"><span class="merge-field">Aliasy (zlúčené)</span>
+                    <div class="alias-chips">${mergedAliases.map(a => `<span class="alias-chip">${esc(a)}</span>`).join('') || '<span class="merge-auto">žiadne</span>'}</div>
+                </div>
+                ${photosHtml}
+                <div class="merge-warn">Po zlúčení: „${esc(B.canonical_name)}" sa zmaže, jeho eventy sa presunú na „${esc(A.canonical_name)}". Nedá sa vrátiť.</div>
+                <div class="merge-actions">
+                    <button onclick="doMerge(${keepId}, ${mergeId})">Zlúčiť</button>
+                    <button class="btn-ghost" onclick="cancelMerge(${keepId})">Zrušiť</button>
+                </div>
+            </div>`;
+    }
+
+    async function doMerge(keepId, mergeId) {
+        const A = items.find(x => x.id === keepId), B = items.find(x => x.id === mergeId);
+        if (!confirm(`Naozaj zlúčiť „${B.canonical_name}" do „${A.canonical_name}"? Liek „${B.canonical_name}" zanikne a jeho eventy sa presunú.`)) return;
+        // field_choices len pre polia s radiom (líšiace sa)
+        const field_choices = {};
+        MERGE_FIELDS.forEach(([key]) => {
+            const sel = document.querySelector(`input[name="mf-${keepId}-${key}"]:checked`);
+            if (sel) field_choices[key] = sel.value;
+        });
+        const mainSel = document.querySelector(`input[name="merge-main-${keepId}"]:checked`);
+        const main_photo = mainSel ? mainSel.value : null;
+        try {
+            const resp = await fetch('/catalog/merge', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ keep_id: keepId, merge_id: mergeId, field_choices, main_photo })
+            });
+            if (resp.status === 401) { location.href = '/login'; return; }
+            if (!resp.ok) { let m = await resp.text(); try { m = JSON.parse(m).detail || m; } catch (e) {} throw new Error(m); }
+            const r = await resp.json();
+            expandedId = keepId;
+            showStatus(`Zlúčené — presunutých ${r.moved_events} eventov na „${esc(A.canonical_name)}"`);
+            loadCatalog();
+        } catch (e) {
+            alert('Zlúčenie zlyhalo: ' + e.message);
+        }
     }
 
     function pilSavedHtml(i) {

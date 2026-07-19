@@ -572,6 +572,146 @@ def mark_pil_not_found(item_id, when):
     conn.close()
 
 
+# ── Zlúčenie duplicitných liekov (citlivá operácia — transakcia) ─────────────
+
+_MERGE_FIELDS = ("canonical_name", "kind", "strength", "form", "manufacturer",
+                 "sukl_code", "atc_code", "description", "side_effects",
+                 "personal_notes", "info_source", "extracted_raw", "pil_info", "pil_source")
+
+
+def _has(v):
+    return v not in (None, "", "[]", "{}")
+
+
+def _dedup_ci(values):
+    """Dedup reťazcov case-insensitive, zachovaj poradie a prvý zápis."""
+    seen, out = set(), []
+    for v in values:
+        v = (v or "").strip()
+        if not v:
+            continue
+        k = v.lower()
+        if k not in seen:
+            seen.add(k)
+            out.append(v)
+    return out
+
+
+def merge_catalog_items(keep_id, merge_id, field_choices=None, main_photo=None):
+    """Zlúči liek B (merge_id) do A (keep_id). Poradie: uprav A → prepoj eventy →
+    over že nie sú osirené → zmaž B. Celé v jednej transakcii (rollback pri chybe).
+    field_choices: {pole: 'keep'|'merge'} pre polia kde sa líšia. Vráti súhrn."""
+    if keep_id == merge_id:
+        raise ValueError("Nemôžeš zlúčiť liek sám so sebou")
+    field_choices = field_choices or {}
+
+    conn = get_db()
+    conn.isolation_level = None   # manuálna transakcia (BEGIN/COMMIT/ROLLBACK)
+    cur = conn.cursor()
+    try:
+        a = cur.execute("SELECT * FROM med_catalog WHERE id=?", (keep_id,)).fetchone()
+        b = cur.execute("SELECT * FROM med_catalog WHERE id=?", (merge_id,)).fetchone()
+        if not a or not b:
+            raise ValueError("Liek nenájdený")
+        a, b = dict(a), dict(b)
+
+        # 1) vyriešené hodnoty polí (voľba keep/merge; inak auto: A ak má hodnotu, inak B)
+        resolved = {}
+        for f in _MERGE_FIELDS:
+            ch = field_choices.get(f)
+            if ch == "merge":
+                resolved[f] = b[f]
+            elif ch == "keep":
+                resolved[f] = a[f]
+            else:
+                resolved[f] = a[f] if _has(a[f]) else b[f]
+        if not _has(resolved["canonical_name"]):
+            resolved["canonical_name"] = a["canonical_name"]
+
+        # 2) aliasy: A + B + názov B, dedup; vynechaj výsledný kanonický názov
+        try:
+            aa = json.loads(a["aliases"] or "[]")
+        except (ValueError, TypeError):
+            aa = []
+        try:
+            ba = json.loads(b["aliases"] or "[]")
+        except (ValueError, TypeError):
+            ba = []
+        aliases = _dedup_ci([*aa, *ba, b["canonical_name"]])
+        canon_lc = resolved["canonical_name"].strip().lower()
+        aliases = [x for x in aliases if x.strip().lower() != canon_lc]
+
+        # 3) fotky: A + B (dedup), hlavná = main_photo | A.photo_path | prvá
+        try:
+            ap = json.loads(a["photos"] or "[]")
+        except (ValueError, TypeError):
+            ap = []
+        try:
+            bp = json.loads(b["photos"] or "[]")
+        except (ValueError, TypeError):
+            bp = []
+        photos = []
+        for p in [*ap, *bp]:
+            if p and p not in photos:
+                photos.append(p)
+        photo_path = main_photo or a.get("photo_path") or (photos[0] if photos else None)
+        if photo_path and photo_path not in photos:
+            photos.insert(0, photo_path)
+
+        now = datetime.utcnow().isoformat()
+        cur.execute("BEGIN")
+        b_events = cur.execute("SELECT COUNT(*) FROM events WHERE catalog_id=?", (merge_id,)).fetchone()[0]
+        a_before = cur.execute("SELECT COUNT(*) FROM events WHERE catalog_id=?", (keep_id,)).fetchone()[0]
+
+        # a) aktualizuj A
+        cur.execute(
+            """UPDATE med_catalog SET
+               canonical_name=?, kind=?, strength=?, form=?, manufacturer=?, sukl_code=?,
+               atc_code=?, description=?, side_effects=?, personal_notes=?, info_source=?,
+               extracted_raw=?, pil_info=?, pil_source=?, aliases=?, photos=?, photo_path=?,
+               updated_at=? WHERE id=?""",
+            (resolved["canonical_name"], resolved["kind"], resolved["strength"], resolved["form"],
+             resolved["manufacturer"], resolved["sukl_code"], resolved["atc_code"],
+             resolved["description"], resolved["side_effects"], resolved["personal_notes"],
+             resolved["info_source"], resolved["extracted_raw"], resolved["pil_info"],
+             resolved["pil_source"], json.dumps(aliases, ensure_ascii=False),
+             json.dumps(photos, ensure_ascii=False), photo_path, now, keep_id))
+
+        # b) prepoj eventy B → A
+        cur.execute("UPDATE events SET catalog_id=? WHERE catalog_id=?", (keep_id, merge_id))
+
+        # d) over že nezostali osirené odkazy na B (inak NEMAŽ B → rollback)
+        orphan = cur.execute("SELECT COUNT(*) FROM events WHERE catalog_id=?", (merge_id,)).fetchone()[0]
+        if orphan != 0:
+            raise RuntimeError(f"Zlúčenie zastavené: {orphan} osirených eventov — B sa nemaže")
+
+        a_after = cur.execute("SELECT COUNT(*) FROM events WHERE catalog_id=?", (keep_id,)).fetchone()[0]
+
+        # c) zmaž B (až po úspešnom prepojení)
+        cur.execute("DELETE FROM med_catalog WHERE id=?", (merge_id,))
+
+        cur.execute("COMMIT")
+    except Exception:
+        try:
+            cur.execute("ROLLBACK")
+        except Exception:
+            pass
+        conn.close()
+        raise
+    conn.close()
+
+    summary = {
+        "keep_id": keep_id, "merged_id": merge_id, "merged_name": b["canonical_name"],
+        "moved_events": b_events, "a_events_before": a_before, "a_events_after": a_after,
+        "aliases_count": len(aliases), "photos_count": len(photos),
+    }
+    # log (do stdout / journalctl) — bezpečnostný záznam čo sa zlúčilo
+    print(f"[MERGE] keep={keep_id} merge={merge_id} ('{b['canonical_name']}') "
+          f"moved_events={b_events} a_events {a_before}->{a_after} "
+          f"aliases={len(aliases)} photos={len(photos)}", flush=True)
+    return summary
+
+
 def delete_catalog_item(item_id):
     conn = get_db()
     conn.execute("DELETE FROM med_catalog WHERE id=?", (item_id,))
