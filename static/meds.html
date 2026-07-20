@@ -301,14 +301,18 @@
 
     async function loadCatalogList() {
         try {
-            const r = await fetch('/catalog', { headers: { 'Accept': 'application/json' } });
+            const r = await fetch('/catalog/list', { headers: { 'Accept': 'application/json' } });
             if (r.ok) {
                 catalogList = (await r.json()).map(c => ({
                     id: c.id, canonical_name: c.canonical_name, kind: c.kind,
                     strength: c.strength, form: c.form,
                 }));
+            } else {
+                console.error('loadCatalogList: /catalog/list vrátil', r.status);
             }
-        } catch (e) { /* katalóg nedostupný — výber sa proste nenaplní */ }
+        } catch (e) {
+            console.error('loadCatalogList zlyhalo:', e);
+        }
         const sel = document.getElementById('fCatalog');
         if (sel) sel.innerHTML = catalogOptions(null);
     }

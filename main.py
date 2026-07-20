@@ -5,7 +5,7 @@ import re
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, Cookie, Depends, Form, UploadFile, File, Header
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
 from pydantic import BaseModel
 from typing import Optional, List
 from database import (
@@ -458,20 +458,31 @@ def _catalog_out(item: dict) -> dict:
     return item
 
 
+@app.get("/catalog/list")
+def catalog_list(include_inactive: bool = False, user=Depends(require_auth)):
+    """VŽDY JSON zoznam katalógu — žiadny dual-mode, žiadna content-negotiation.
+    Frontend (dropdown v /meds, zoznam v /catalog) používa toto. no-store, aby
+    prehliadač nezacacheoval a nepomiešal s HTML stránkou /catalog."""
+    data = [_catalog_out(i) for i in get_catalog(include_inactive=include_inactive)]
+    return JSONResponse(content=data, headers={"Cache-Control": "no-store"})
+
+
 @app.get("/catalog")
 def catalog_root(include_inactive: bool = False,
                  session: Optional[str] = Cookie(None),
                  accept: str = Header("")):
-    """Browsers (Accept: text/html) get the page; API clients that send
-    Accept: application/json get the JSON list. Both require auth."""
+    """HTML stránka katalógu pre prehliadač. Ostáva dual-mode (Accept: application/json
+    → JSON) pre spätnú kompatibilitu, ale frontend už na JSON používa /catalog/list.
+    Vary: Accept — aby cache nezamieňala HTML a JSON variant pre tú istú URL."""
     authed = bool(decode_session_token(session)) if session else False
     if "application/json" in accept.lower():
         if not authed:
             raise HTTPException(status_code=401, detail="Nie si prihlásený")
-        return [_catalog_out(i) for i in get_catalog(include_inactive=include_inactive)]
+        data = [_catalog_out(i) for i in get_catalog(include_inactive=include_inactive)]
+        return JSONResponse(content=data, headers={"Vary": "Accept", "Cache-Control": "no-store"})
     if not authed:
         return RedirectResponse(url="/login", status_code=302)
-    return FileResponse("static/catalog.html")
+    return FileResponse("static/catalog.html", headers={"Vary": "Accept"})
 
 
 def _resolve_photos(body: CatalogBody):

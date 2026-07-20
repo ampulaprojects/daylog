@@ -444,7 +444,7 @@
     // ── Load & render ────────────────────────────────────────────────────────
 
     async function loadCatalog() {
-        const resp = await fetch('/catalog?include_inactive=true', {
+        const resp = await fetch('/catalog/list?include_inactive=true', {
             headers: { 'Accept': 'application/json' }
         });
         if (resp.status === 401) { location.href = '/login'; return; }

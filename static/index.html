@@ -747,9 +747,10 @@
 
         async function loadCatalogList() {
             try {
-                const r = await fetch('/catalog', { headers: { 'Accept': 'application/json' } });
+                const r = await fetch('/catalog/list', { headers: { 'Accept': 'application/json' } });
                 if (r.ok) catalogList = (await r.json()).map(c => ({ id: c.id, canonical_name: c.canonical_name }));
-            } catch (e) { /* katalóg nedostupný — párovanie sa proste nezobrazí */ }
+                else console.error('loadCatalogList: /catalog/list vrátil', r.status);
+            } catch (e) { console.error('loadCatalogList zlyhalo:', e); }
         }
 
         function catNameById(id) {
