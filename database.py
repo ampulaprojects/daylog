@@ -75,10 +75,15 @@ def init_db():
             note TEXT,
             active INTEGER DEFAULT 1,
             sort_order INTEGER DEFAULT 0,
+            catalog_id INTEGER REFERENCES med_catalog(id),
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )
     """)
+    try:
+        conn.execute("ALTER TABLE med_schedule ADD COLUMN catalog_id INTEGER")
+    except Exception:
+        pass
     conn.execute("""
         CREATE TABLE IF NOT EXISTS med_catalog (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -413,10 +418,12 @@ def delete_event(event_id):
 
 def get_medications(include_inactive=False):
     conn = get_db()
-    q = "SELECT * FROM med_schedule"
+    q = """SELECT m.*, c.canonical_name AS catalog_name
+           FROM med_schedule m
+           LEFT JOIN med_catalog c ON m.catalog_id = c.id"""
     if not include_inactive:
-        q += " WHERE active = 1"
-    q += " ORDER BY sort_order, time_value, name"
+        q += " WHERE m.active = 1"
+    q += " ORDER BY m.sort_order, m.time_value, m.name"
     rows = conn.execute(q).fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -424,16 +431,16 @@ def get_medications(include_inactive=False):
 
 def create_medication(name, kind="liek", count=None, dose=None, unit=None,
                       time_type=None, time_exact=None, time_value=None,
-                      days="kazdy_den", note=None, sort_order=0):
+                      days="kazdy_den", note=None, sort_order=0, catalog_id=None):
     conn = get_db()
     now = datetime.utcnow().isoformat()
     cur = conn.execute(
         """INSERT INTO med_schedule
            (name, kind, count, dose, unit, time_type, time_exact, time_value, days, note,
-            active, sort_order, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?)""",
+            active, sort_order, catalog_id, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?)""",
         (name, kind, count, dose, unit, time_type, time_exact, time_value, days, note,
-         sort_order, now, now)
+         sort_order, catalog_id, now, now)
     )
     conn.commit()
     med_id = cur.lastrowid
@@ -442,15 +449,15 @@ def create_medication(name, kind="liek", count=None, dose=None, unit=None,
 
 
 def update_medication(med_id, name, kind, count, dose, unit, time_type,
-                      time_exact, time_value, days, note, sort_order):
+                      time_exact, time_value, days, note, sort_order, catalog_id=None):
     conn = get_db()
     now = datetime.utcnow().isoformat()
     conn.execute(
         """UPDATE med_schedule SET name=?, kind=?, count=?, dose=?, unit=?,
            time_type=?, time_exact=?, time_value=?, days=?, note=?,
-           sort_order=?, updated_at=? WHERE id=?""",
+           sort_order=?, catalog_id=?, updated_at=? WHERE id=?""",
         (name, kind, count, dose, unit, time_type, time_exact, time_value,
-         days, note, sort_order, now, med_id)
+         days, note, sort_order, catalog_id, now, med_id)
     )
     conn.commit()
     conn.close()

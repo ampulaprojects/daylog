@@ -360,6 +360,7 @@ class MedBody(BaseModel):
     days: str = "kazdy_den"
     note: Optional[str] = None
     sort_order: int = 0
+    catalog_id: Optional[int] = None   # väzba na katalóg (NULL = ručne zadaný)
 
 
 @app.get("/medications")
@@ -373,7 +374,7 @@ def add_medication(body: MedBody, user=Depends(require_auth)):
         name=body.name, kind=body.kind, count=body.count, dose=body.dose,
         unit=body.unit, time_type=body.time_type, time_exact=body.time_exact,
         time_value=body.time_value, days=body.days, note=body.note,
-        sort_order=body.sort_order
+        sort_order=body.sort_order, catalog_id=body.catalog_id
     )
     return {"id": med_id}
 
@@ -395,7 +396,8 @@ def edit_medication(med_id: int, body: MedBody, user=Depends(require_auth)):
         med_id=med_id, name=body.name, kind=body.kind, count=body.count,
         dose=body.dose, unit=body.unit, time_type=body.time_type,
         time_exact=body.time_exact, time_value=body.time_value,
-        days=body.days, note=body.note, sort_order=body.sort_order
+        days=body.days, note=body.note, sort_order=body.sort_order,
+        catalog_id=body.catalog_id
     )
     return {"id": med_id}
 

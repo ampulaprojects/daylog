@@ -49,6 +49,8 @@
         .badge-vitamin { background: #16a34a; }
         .badge-doplnok { background: #d97706; }
         .badge-inactive { background: #9ca3af; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 4px; color: #fff; }
+        .cat-link-badge { font-size: 10px; color: #4338ca; background: #eef2ff; border-radius: 4px; padding: 2px 6px; text-decoration: none; white-space: nowrap; }
+        .cat-link-badge:hover { background: #e0e7ff; }
 
         /* ── Days mode picker ────────────────────────────────────────────── */
         .days-mode-picker { display: flex; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; }
@@ -171,6 +173,14 @@
                 <h2>Pridať liek</h2>
 
                 <div class="form-group">
+                    <label>Z katalógu <span style="color:#bbb">(voliteľné)</span></label>
+                    <select id="fCatalog" onchange="pickFromCatalog('f', this.value)">
+                        <option value="">— ručne, bez katalógu —</option>
+                    </select>
+                    <div class="field-hint">predvyplní názov, silu, formu a typ — všetko sa dá prepísať</div>
+                </div>
+
+                <div class="form-group">
                     <label>Názov <span style="color:#e53e3e">*</span></label>
                     <input type="text" id="fName" placeholder="napr. Orfiril">
                 </div>
@@ -286,6 +296,56 @@
         return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
 
+    // ── Katalóg: výber lieku predvyplní polia + naviaže catalog_id ────────────
+    let catalogList = [];
+
+    async function loadCatalogList() {
+        try {
+            const r = await fetch('/catalog', { headers: { 'Accept': 'application/json' } });
+            if (r.ok) {
+                catalogList = (await r.json()).map(c => ({
+                    id: c.id, canonical_name: c.canonical_name, kind: c.kind,
+                    strength: c.strength, form: c.form,
+                }));
+            }
+        } catch (e) { /* katalóg nedostupný — výber sa proste nenaplní */ }
+        const sel = document.getElementById('fCatalog');
+        if (sel) sel.innerHTML = catalogOptions(null);
+    }
+
+    function catalogOptions(selectedId) {
+        let out = `<option value="">— ručne, bez katalógu —</option>`;
+        for (const c of catalogList) {
+            const label = [c.canonical_name, c.strength].filter(Boolean).join(' · ');
+            out += `<option value="${c.id}"${String(c.id) === String(selectedId) ? ' selected' : ''}>${esc(label)}</option>`;
+        }
+        return out;
+    }
+
+    // prefix 'f' = pridávací formulár, 'ie' = inline editor
+    const CAT_FIELD_IDS = {
+        f:  { name: 'fName',   kind: 'fKind',   dose: 'fDose',   unit: 'fUnit' },
+        ie: { name: 'ie-name', kind: 'ie-kind', dose: 'ie-dose', unit: 'ie-unit' },
+    };
+
+    function pickFromCatalog(prefix, catId) {
+        if (!catId) return;   // "ručne" — väzbu zruší, polia nechá tak
+        const c = catalogList.find(x => String(x.id) === String(catId));
+        if (!c) return;
+        const ids = CAT_FIELD_IDS[prefix];
+        const set = (id, val) => { const el = document.getElementById(id); if (el && val != null) el.value = val; };
+        set(ids.name, c.canonical_name);
+        set(ids.dose, c.strength || '');
+        set(ids.unit, c.form || '');
+        if (c.kind) set(ids.kind, c.kind);
+    }
+
+    function catalogBadge(m) {
+        if (!m.catalog_id) return '';
+        const title = m.catalog_name ? `z katalógu: ${m.catalog_name}` : 'z katalógu';
+        return `<a href="/catalog" class="cat-link-badge" title="${esc(title)}">z katalógu</a>`;
+    }
+
     function formatCount(v) {
         if (v == null) return '';
         const n = parseFloat(v);
@@ -389,6 +449,12 @@
 
     function inlineEditHtml(m) {
         return `<div class="inline-edit">
+          <div class="form-group">
+            <label>Z katalógu <span style="color:#bbb">(voliteľné)</span></label>
+            <select id="ie-catalog" onchange="pickFromCatalog('ie', this.value)">
+              ${catalogOptions(m.catalog_id)}
+            </select>
+          </div>
           <div class="form-row">
             <div class="form-group">
               <label>Názov</label>
@@ -476,7 +542,7 @@
               </div>
             </div>
             <span class="med-name${inactive?' inactive-name':''}">${esc(m.name)}</span>
-            ${kindBadge} ${inactiveBadge}
+            ${kindBadge} ${inactiveBadge} ${catalogBadge(m)}
           </div>
           <div class="med-detail">${detail}</div>
           ${note}
@@ -622,6 +688,8 @@
             days:       getDaysValue('ie-days-field'),
             note:       document.getElementById('ie-note').value.trim() || null,
             sort_order: m?.sort_order ?? 0,
+            catalog_id: document.getElementById('ie-catalog').value
+                          ? parseInt(document.getElementById('ie-catalog').value) : null,
         };
 
         const btn = document.getElementById('ie-save-btn');
@@ -660,6 +728,8 @@
             days:       getDaysValue('f-days-field'),
             note:       document.getElementById('fNote').value.trim() || null,
             sort_order: 0,
+            catalog_id: document.getElementById('fCatalog').value
+                          ? parseInt(document.getElementById('fCatalog').value) : null,
         };
 
         const btn = document.getElementById('saveBtn');
@@ -682,6 +752,7 @@
     }
 
     function resetAddForm() {
+        document.getElementById('fCatalog').value = '';
         document.getElementById('fName').value = '';
         document.getElementById('fKind').value = 'liek';
         const fc = document.getElementById('f-count');
@@ -728,6 +799,7 @@
         if (e.key === 'Escape' && editingId !== null) cancelEdit();
     });
 
+    loadCatalogList();
     loadMeds();
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.2/Sortable.min.js"
