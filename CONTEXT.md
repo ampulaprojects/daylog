@@ -82,8 +82,14 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 - Web search vkladá plný text nájdených stránok do input tokenov — jeden PIL ~40-98k tokenov. Preto cache + limit web searchov.
 - PIL nájde len reálne SK lieky (sukl.sk/adc.sk); zahraničné doplnky poctivo vráti "nenašiel" — to je zámer (poistka proti halucinácii)
 - Zlučovanie liekov je nezvratné a dotýka sa eventov (catalog_id) — poradie kritické: prepoj eventy → over 0 osirených → až potom zmaž duplikát. Pred zlúčením na produkcii sa robí záloha daylog.db.pre-merge.
+- Dual-mode endpoint (HTML/JSON na jednej URL podľa Accept) potrebuje Vary: Accept, inak prehliadač cacheuje jednu podobu a zamieňa ich; čistejšie je oddeliť JSON API na vlastnú URL.
 
 ## Changelog
+
+### 2026-07-20
+- Fix: prázdny dropdown "Z katalógu" v /meds — JSON zoznam katalógu presunutý na samostatný GET /catalog/list (vždy JSON, Cache-Control: no-store), defenzívne Vary: Accept na dual-mode /catalog
+- Príčina: prehliadač vracal zacacheovaný HTML namiesto JSON (chýbal Vary: Accept na /catalog), r.json() zlyhal, tichý catch → prázdny dropdown
+- Frontend fetche (meds, index, catalog) presmerované na /catalog/list; loadCatalogList má console.error namiesto tichého catchu
 
 ### 2026-07-19
 - Zlučovanie duplicitných liekov v katalógu: POST /catalog/merge, porovnávací panel s výberom polí, transakčné (celé alebo nič), prepojí eventy z B na A PRED zmazaním B, overí 0 osirených odkazov (inak rollback), zlúči aliasy + fotky; B sa natvrdo zmaže
