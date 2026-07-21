@@ -1010,6 +1010,14 @@
         if (!confirm(`Zmazať "${it?.canonical_name}" z katalógu?`)) return;
         const resp = await fetch(`/catalog/${id}`, { method: 'DELETE' });
         if (resp.status === 401) { location.href = '/login'; return; }
+        if (!resp.ok) {
+            // 409 = položka sa používa (eventy / režim). Chyba NESMIE zapadnúť.
+            let msg = `Mazanie zlyhalo (HTTP ${resp.status})`;
+            try { const d = await resp.json(); if (d && d.detail) msg = d.detail; } catch (e) {}
+            console.error('deleteItem zlyhalo:', resp.status, msg);
+            alert(msg);
+            return;
+        }
         showStatus('Zmazané');
         loadCatalog();
     }

@@ -604,6 +604,23 @@ def _dedup_ci(values):
     return out
 
 
+def _orphan_counts(cur, ignore_id=None):
+    """(events, med_schedule) — počty riadkov, ktorých catalog_id ukazuje mimo
+    med_catalog. ignore_id: položka, ktorá sa má rátať ako už zmazaná (aby sa
+    dal stav overiť EŠTE PRED jej DELETE)."""
+    sub = "SELECT id FROM med_catalog"
+    params = ()
+    if ignore_id is not None:
+        sub += " WHERE id != ?"
+        params = (ignore_id,)
+    out = []
+    for table in ("events", "med_schedule"):
+        out.append(cur.execute(
+            f"SELECT COUNT(*) FROM {table} WHERE catalog_id IS NOT NULL "
+            f"AND catalog_id NOT IN ({sub})", params).fetchone()[0])
+    return out[0], out[1]
+
+
 def merge_catalog_items(keep_id, merge_id, field_choices=None, main_photo=None):
     """Zlúči liek B (merge_id) do A (keep_id). Poradie: uprav A → prepoj eventy →
     over že nie sú osirené → zmaž B. Celé v jednej transakcii (rollback pri chybe).
@@ -668,7 +685,11 @@ def merge_catalog_items(keep_id, merge_id, field_choices=None, main_photo=None):
         now = datetime.utcnow().isoformat()
         cur.execute("BEGIN")
         b_events = cur.execute("SELECT COUNT(*) FROM events WHERE catalog_id=?", (merge_id,)).fetchone()[0]
+        b_scheds = cur.execute("SELECT COUNT(*) FROM med_schedule WHERE catalog_id=?", (merge_id,)).fetchone()[0]
         a_before = cur.execute("SELECT COUNT(*) FROM events WHERE catalog_id=?", (keep_id,)).fetchone()[0]
+        # základ: osirené odkazy, ktoré v DB existovali UŽ PRED zlúčením (tie
+        # toto zlúčenie nespôsobilo a nesmú ho blokovať)
+        base_ev_orphans, base_sch_orphans = _orphan_counts(cur)
 
         # a) aktualizuj A
         cur.execute(
@@ -687,14 +708,26 @@ def merge_catalog_items(keep_id, merge_id, field_choices=None, main_photo=None):
         # b) prepoj eventy B → A
         cur.execute("UPDATE events SET catalog_id=? WHERE catalog_id=?", (keep_id, merge_id))
 
-        # d) over že nezostali osirené odkazy na B (inak NEMAŽ B → rollback)
-        orphan = cur.execute("SELECT COUNT(*) FROM events WHERE catalog_id=?", (merge_id,)).fetchone()[0]
-        if orphan != 0:
-            raise RuntimeError(f"Zlúčenie zastavené: {orphan} osirených eventov — B sa nemaže")
+        # c) prepoj režim (med_schedule) B → A
+        cur.execute("UPDATE med_schedule SET catalog_id=? WHERE catalog_id=?", (keep_id, merge_id))
+
+        # d) over že nezostali odkazy na B (inak NEMAŽ B → rollback)
+        left_ev = cur.execute("SELECT COUNT(*) FROM events WHERE catalog_id=?", (merge_id,)).fetchone()[0]
+        left_sch = cur.execute("SELECT COUNT(*) FROM med_schedule WHERE catalog_id=?", (merge_id,)).fetchone()[0]
+        if left_ev or left_sch:
+            raise RuntimeError(f"Zlúčenie zastavené: na B stále odkazuje "
+                               f"{left_ev} eventov a {left_sch} položiek režimu — B sa nemaže")
+
+        # d2) a že zlúčenie nevyrobilo NOVÉ osirené odkazy (B rátame ako zmazané)
+        ev_orphans, sch_orphans = _orphan_counts(cur, ignore_id=merge_id)
+        if ev_orphans > base_ev_orphans or sch_orphans > base_sch_orphans:
+            raise RuntimeError(
+                f"Zlúčenie zastavené: vzniklo by {ev_orphans - base_ev_orphans} osirených "
+                f"eventov a {sch_orphans - base_sch_orphans} osirených položiek režimu")
 
         a_after = cur.execute("SELECT COUNT(*) FROM events WHERE catalog_id=?", (keep_id,)).fetchone()[0]
 
-        # c) zmaž B (až po úspešnom prepojení)
+        # e) zmaž B (až po úspešnom prepojení a overení)
         cur.execute("DELETE FROM med_catalog WHERE id=?", (merge_id,))
 
         cur.execute("COMMIT")
@@ -709,20 +742,52 @@ def merge_catalog_items(keep_id, merge_id, field_choices=None, main_photo=None):
 
     summary = {
         "keep_id": keep_id, "merged_id": merge_id, "merged_name": b["canonical_name"],
-        "moved_events": b_events, "a_events_before": a_before, "a_events_after": a_after,
+        "moved_events": b_events, "moved_schedules": b_scheds,
+        "a_events_before": a_before, "a_events_after": a_after,
         "aliases_count": len(aliases), "photos_count": len(photos),
     }
     # log (do stdout / journalctl) — bezpečnostný záznam čo sa zlúčilo
     print(f"[MERGE] keep={keep_id} merge={merge_id} ('{b['canonical_name']}') "
-          f"moved_events={b_events} a_events {a_before}->{a_after} "
+          f"moved_events={b_events} moved_schedules={b_scheds} a_events {a_before}->{a_after} "
           f"aliases={len(aliases)} photos={len(photos)}", flush=True)
     return summary
 
 
+class CatalogInUseError(Exception):
+    """Položku katalógu nemožno zmazať — odkazujú na ňu eventy alebo režim."""
+
+    def __init__(self, item_id, events, schedules):
+        self.item_id = item_id
+        self.events = events
+        self.schedules = schedules
+        super().__init__(f"Položka {item_id} sa používa: {events} eventov, "
+                         f"{schedules} položiek režimu")
+
+
 def delete_catalog_item(item_id):
+    """Zmaže položku katalógu LEN ak na ňu nič neodkazuje.
+    FK v SQLite nie sú vynucované, takže väzby kontrolujeme tu — holý DELETE
+    by zanechal osirené events.catalog_id / med_schedule.catalog_id."""
     conn = get_db()
-    conn.execute("DELETE FROM med_catalog WHERE id=?", (item_id,))
-    conn.commit()
+    conn.isolation_level = None   # manuálna transakcia (ako merge_catalog_items)
+    cur = conn.cursor()
+    try:
+        cur.execute("BEGIN")
+        ev = cur.execute("SELECT COUNT(*) FROM events WHERE catalog_id=?",
+                         (item_id,)).fetchone()[0]
+        sch = cur.execute("SELECT COUNT(*) FROM med_schedule WHERE catalog_id=?",
+                          (item_id,)).fetchone()[0]
+        if ev or sch:
+            raise CatalogInUseError(item_id, ev, sch)
+        cur.execute("DELETE FROM med_catalog WHERE id=?", (item_id,))
+        cur.execute("COMMIT")
+    except Exception:
+        try:
+            cur.execute("ROLLBACK")
+        except Exception:
+            pass
+        conn.close()
+        raise
     conn.close()
 
 

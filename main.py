@@ -17,7 +17,7 @@ from database import (
     delete_medication, set_medication_active, reorder_medications,
     get_catalog, get_catalog_item, create_catalog_item, update_catalog_item,
     delete_catalog_item, set_catalog_active, find_by_alias, update_catalog_pil,
-    mark_pil_not_found, merge_catalog_items,
+    mark_pil_not_found, merge_catalog_items, CatalogInUseError,
     get_usage_totals, get_usage_by_function, get_recent_usage
 )
 from auth import verify_password, create_session_token, decode_session_token
@@ -644,7 +644,20 @@ def edit_catalog(item_id: int, body: CatalogBody, user=Depends(require_auth)):
 
 @app.delete("/catalog/{item_id}", status_code=204)
 def remove_catalog(item_id: int, user=Depends(require_auth)):
-    delete_catalog_item(item_id)
+    try:
+        delete_catalog_item(item_id)
+    except CatalogInUseError as e:
+        def sk(n, one, few, many):   # 1 event / 2-4 eventy / 5+ eventov
+            return f"{n} {one if n == 1 else few if n < 5 else many}"
+        parts = []
+        if e.events:
+            parts.append(sk(e.events, "event", "eventy", "eventov"))
+        if e.schedules:
+            parts.append(sk(e.schedules, "položka režimu", "položky režimu", "položiek režimu"))
+        raise HTTPException(
+            status_code=409,
+            detail=f"Položku nemožno zmazať: odkazuje na ňu {' a '.join(parts)}. "
+                   f"Použi zlúčenie s inou položkou katalógu.")
 
 
 @app.patch("/catalog/{item_id}/active")
