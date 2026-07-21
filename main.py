@@ -1,5 +1,6 @@
 import io
 import json
+import logging
 import pathlib
 import re
 from datetime import datetime
@@ -11,8 +12,9 @@ from typing import Optional, List
 from database import (
     init_db, get_user_by_username, get_user_by_id,
     update_user_password,
-    create_entry, get_entries, get_entry, create_event,
-    delete_entry, update_entry_text, replace_entry_events,
+    create_entry, get_entries, get_entry,
+    create_entry_with_events, update_entry_with_events,
+    delete_entry,
     get_medications, create_medication, update_medication,
     delete_medication, set_medication_active, reorder_medications,
     get_catalog, get_catalog_item, create_catalog_item, update_catalog_item,
@@ -28,6 +30,10 @@ from llm import extract_events, transcribe_photo, scan_med_package, fetch_pil_in
 
 UPLOAD_DIR = pathlib.Path("uploads")
 app = FastAPI()
+
+# Loguje sa cez uvicorn.error, aby hlásenia išli rovnakým kanálom ako zvyšok
+# servera (stderr → journalctl -u daylog). Projekt inak vlastný logging nemá.
+log = logging.getLogger("uvicorn.error")
 
 
 @app.on_event("startup")
@@ -256,27 +262,31 @@ def entries_extract(body: ExtractRequest, user=Depends(require_auth)):
 @app.post("/entries/confirm", status_code=201)
 def entries_confirm(body: ConfirmRequest, user=Depends(require_auth)):
     llm_processed_at = datetime.utcnow().isoformat() if body.llm_raw else None
-    entry_id = create_entry(
-        entry_date=body.entry_date,
-        text=body.text,
-        entry_time=body.entry_time,
-        source=body.source,
-        user_id=user["id"],
-        photo_path=body.photo_path,
-        llm_analysis=body.llm_raw,
-        llm_model=body.llm_model,
-        llm_processed_at=llm_processed_at,
-    )
-    for ev in body.events:
-        create_event(
-            entry_id=entry_id,
+    events_data = [{"event_time": ev.event_time, "event_type": ev.event_type,
+                    "value": ev.value, "note": ev.note,
+                    "catalog_id": ev.catalog_id if ev.event_type == "liek" else None}
+                   for ev in body.events]
+    try:
+        entry_id = create_entry_with_events(
+            entry_date=body.entry_date,
+            text=body.text,
+            events=events_data,
+            entry_time=body.entry_time,
+            source=body.source,
             user_id=user["id"],
-            event_type=ev.event_type,
-            value=ev.value,
-            event_time=ev.event_time,
-            note=ev.note,
-            catalog_id=ev.catalog_id if ev.event_type == "liek" else None,
+            photo_path=body.photo_path,
+            llm_analysis=body.llm_raw,
+            llm_model=body.llm_model,
+            llm_processed_at=llm_processed_at,
         )
+    except Exception as e:
+        log.exception("Zápis záznamu zlyhal (rollback, nezapísalo sa nič) — "
+                      "user_id=%s, entry_date=%s, eventov=%s",
+                      user["id"], body.entry_date, len(events_data))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Záznam sa neuložil, do databázy sa nezapísalo nič "
+                   f"(ani text, ani eventy). Skús to znova. Detail: {e}")
     return {"entry_id": entry_id, "event_count": len(body.events)}
 
 
@@ -294,12 +304,21 @@ def delete_entry_endpoint(entry_id: int, user=Depends(require_auth)):
 
 @app.put("/entries/{entry_id}")
 def update_entry_endpoint(entry_id: int, body: EntryUpdate, user=Depends(require_auth)):
-    update_entry_text(entry_id, body.text, body.entry_date, body.entry_time)
     events_data = [{"event_time": e.event_time, "event_type": e.event_type,
                     "value": e.value, "note": e.note,
                     "catalog_id": e.catalog_id if e.event_type == "liek" else None}
                    for e in body.events]
-    replace_entry_events(entry_id, user["id"], events_data)
+    try:
+        update_entry_with_events(entry_id, user["id"], body.text, events_data,
+                                 body.entry_date, body.entry_time)
+    except Exception as e:
+        log.exception("Editácia záznamu zlyhala (rollback, pôvodný stav zostal) — "
+                      "entry_id=%s, user_id=%s, eventov=%s",
+                      entry_id, user["id"], len(events_data))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Zmeny sa neuložili, pôvodný záznam ani jeho eventy sa nezmenili. "
+                   f"Skús to znova. Detail: {e}")
     return {"entry_id": entry_id, "event_count": len(body.events)}
 
 

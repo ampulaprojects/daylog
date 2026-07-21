@@ -462,6 +462,12 @@
             document.getElementById('photoOverlayImg').src = '';
         }
         document.addEventListener('keydown', e => { if (e.key === 'Escape') closePhoto(); });
+        // Chybová hláška z FastAPI: {"detail": "..."} → čitateľný text, nie surové JSON
+        async function errDetail(resp) {
+            let m = await resp.text();
+            try { m = JSON.parse(m).detail || m; } catch (e) {}
+            return m;
+        }
         function esc(s) {
             if (!s) return '';
             return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -633,7 +639,7 @@
                     body: JSON.stringify({ text: textToSave, events, entry_date: entryDate, entry_time: entryTime || null })
                 });
                 if (resp.status === 401) { location.href = '/login'; return; }
-                if (!resp.ok) throw new Error(await resp.text());
+                if (!resp.ok) throw new Error(await errDetail(resp));
                 inlineEditId = null;
                 inlinePreRecalcEvents = null;
                 loadEntries();
@@ -704,8 +710,15 @@
 
         async function deleteEntry(entryId) {
             if (!confirm('Zmazať celý záznam aj so všetkými eventmi?')) return;
-            const resp = await fetch(`/entries/${entryId}`, { method: 'DELETE' });
-            if (resp.ok || resp.status === 204) loadEntries();
+            try {
+                const resp = await fetch(`/entries/${entryId}`, { method: 'DELETE' });
+                if (resp.status === 401) { location.href = '/login'; return; }
+                if (!resp.ok && resp.status !== 204) throw new Error(await errDetail(resp));
+                loadEntries();
+            } catch (e) {
+                console.error('Mazanie záznamu zlyhalo:', e);
+                alert('Záznam sa nepodarilo zmazať: ' + e.message);
+            }
         }
 
         // ── Review panel helpers ─────────────────────────────────────────────
@@ -940,7 +953,7 @@
                     });
                 }
                 if (resp.status === 401) { location.href = '/login'; return; }
-                if (!resp.ok) throw new Error(await resp.text());
+                if (!resp.ok) throw new Error(await errDetail(resp));
                 data = await resp.json();
 
                 // Reset

@@ -69,11 +69,14 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 - Režim liekov Fáza 1 (evidencia) — HOTOVÉ; Fáza 2 (porovnanie eventov s režimom, detekcia odchýlok) — odložené
 - Napojenie /catalog/lookup na LLM extrakciu eventov (normalizácia názvov pri zápise)
 - Trvalé testy: integrita katalógu hotová (tests/test_catalog_integrity.py); API testy (tests/test_api.py) stále chýbajú. Pozor: pytest nie je nainštalovaný, testy sú preto spustiteľné aj cez `python tests/test_catalog_integrity.py`
+- profile.html — zmena hesla nemá fetch v try/catch, výpadok siete prejde ticho (kozmetika, neurgentné)
+- /medications/* endpointy nemajú server-side ošetrenie chýb ani logovanie (na rozdiel od /entries/*) — pri DB chybe vrátia holé Internal Server Error bez SK hlášky
+- DELETE /medications/{id} a PATCH /medications/{id}/active nekontrolujú existenciu — mazanie neexistujúceho lieku vráti 204 ako úspech
+- Pri HTTP 422 zobrazí alert "[object Object]", lebo detail je vtedy pole, nie reťazec (index.html aj catalog.html). Nízka priorita, nastane len pri chybe v našom JS
 - datetime.utcnow() deprecated — nahradiť pri väčšom zásahu do database.py
 - Zvážiť EAN ako atomické pole (zatiaľ v extracted_raw)
 - Poznámka: vzorka katalógu je zaťažená doplnkami; pre liekové rozhodnutia dôležité reálne SK lieky syna
 - PRAGMA foreign_keys nie je zapnutá; FK nie sú za behu vynucované, events.catalog_id a med_schedule.catalog_id nemajú ani REFERENCES. Integrita visí len na aplikačnej logike. Zapnutie vyžaduje rozhodnutie o ON DELETE a prestavbu tabuliek
-- POST /entries/confirm nie je atomické — entry a eventy sa zapisujú cez samostatné spojenia a commity; pri zlyhaní zostane neúplný záznam
 - Fáza 2 liekov naráža na dátový model: jeden event často obsahuje viac liekov naraz (napr. "3× Ofriril, 1/2 Tisercin, 1/4 Fevarin"), ale catalog_id je jediná hodnota. Z 507 eventov je 104 typu liek, z toho len 37 má catalog_id. Treba rozhodnúť medzi rozbitím eventov na jeden liek = jeden event, alebo spojovacou tabuľkou event_meds
 - V dátach sú cyrilické homoglyfy z diktovania (Ofriлril, Tisercinу) — párovanie cez aliasy ich musí normalizovať; riešiteľné deterministicky, bez LLM
 
@@ -88,12 +91,22 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 - Zlučovanie liekov je nezvratné a dotýka sa eventov (catalog_id) — poradie kritické: prepoj eventy → over 0 osirených → až potom zmaž duplikát. Pred zlúčením na produkcii sa robí záloha daylog.db.pre-merge.
 - Dual-mode endpoint (HTML/JSON na jednej URL podľa Accept) potrebuje Vary: Accept, inak prehliadač cacheuje jednu podobu a zamieňa ich; čistejšie je oddeliť JSON API na vlastnú URL.
 - Osirené odkazy vznikajú ticho, lebo SQLite bez PRAGMA foreign_keys nič nekontroluje. Každá nová väzba cez *_id potrebuje vlastnú aplikačnú ochranu, kým nie je FK enforcement zapnutý.
+- Lokálny vývoj beží na Pythone 3.14, VPS na 3.10. "Funguje mi to lokálne" preto nie je plnohodnotný dôkaz — rozdiely vo verziách sa môžu prejaviť až na produkcii
+- Lokálny uvicorn sa na Pythone 3.14 pri NEOŠETRENEJ výnimke zasekne: pošle hlavičky 500 bez tela a ďalšie requesty už neobslúži. Reprodukované aj na čistej FastAPI appke bez nášho kódu, čiže ide o prostredie, nie o projekt. Produkcie (3.10) sa netýka. Ošetrené výnimky (try/except, HTTPException) fungujú lokálne správne
+- errDetail() je duplikovaný v index.html, catalog.html a meds.html. Projekt nemá build, zdieľanie JS medzi stránkami je samostatné rozhodnutie
 - Lokálny .env musí obsahovať DAYLOG_SECRET (aspoň 32 znakov) aj DAYLOG_INSECURE_COOKIE=1, inak sa appka buď nespustí, alebo sa cez http://localhost nedá prihlásiť (secure cookie prehliadač po HTTP nepošle). Na VPS .env NIE JE — secure preto ostáva zapnutý a DAYLOG_SECRET ide zo systemd drop-inu
 - deploy.ps1 NEREŠTARTUJE daylog.service — po každom deploy treba ručne `systemctl restart daylog`, inak beží starý kód.
 
 ## Changelog
 
 ### 2026-07-21
+- Blok 2B — atomický zápis: create_entry_with_events() zapíše entry aj všetky eventy v jednej transakcii na jednom spojení, update_entry_with_events() to isté pre editáciu (text/dátum/čas + výmena eventov). Pri chybe ROLLBACK a výnimka ide ďalej. Vzor prevzatý z merge_catalog_items() (isolation_level=None, BEGIN/COMMIT/ROLLBACK), spoločný _insert_events() vkladá eventy existujúcim kurzorom
+- Horší z dvoch prípadov bola editácia: text sa commitol samostatne pred výmenou eventov, takže zlyhanie uprostred nechalo záznam s novým textom a starými eventmi. Pôvodné replace_entry_events() zaniklo — nahradilo ho update_entry_with_events()
+- /entries/confirm a PUT /entries/{id} majú try/except → HTTP 500 so SK hláškou, ktorá výslovne hovorí, že sa nezapísalo nič / že pôvodný stav zostal. Frontend (index.html) dostal errDetail() — z {"detail": ...} vytiahne text, predtým alert ukazoval surové JSON
+- create_event() a update_entry_text() zmazané — po prechode na transakčné funkcie im zostalo nula volajúcich a boli to neatomické skratky, ktoré zvádzali obísť nový zápis. create_entry() ostáva, používa ju POST /entries (zapisuje len entry bez eventov)
+- Chyby zápisu idú do logu cez logging.getLogger("uvicorn.error") — log.exception() s plným tracebackom v journalctl, používateľ dostane len vetu + text výnimky. Vlastný logger by bez konfigurácie handlerov skončil na logging.lastResort; uvicorn.error má handler pripravený a ide do rovnakého streamu ako zvyšok servera
+- Mazanie záznamu v index.html pri neúspechu ticho nič neurobilo (používateľ videl "zmazané", záznam ostal) — teraz alert + console.error cez errDetail()
+- tests/test_entry_atomicity.py (8 testov): rollback pri zlyhaní N-tého eventu, staršie záznamy prežijú rollback, editácia nezmení pôvodné eventy pri zlyhaní, prázdny zoznam eventov je platný. Zlyhanie sa vynucuje eventom, ktorého value je dict → sqlite3.InterfaceError pri bindovaní
 - Blok 2A — fail-fast na secrete: auth.py už nemá žiadny fallback. Pri importe overí DAYLOG_SECRET (resolve_secret) a pri chýbajúcom, prázdnom, kratšom než 32 znakov alebo starom "daylog-dev-secret-2026" vyhodí SecretConfigError so SK návodom (hodnotu secretu nikdy nevypisuje). Padá pri ŠTARTE, nie až pri prihlásení — auth sa importuje z main.py, takže uvicorn ani nenabehne
 - auth.py teraz sám volá load_dotenv() — importuje sa skôr než llm.py, ktorý dovtedy .env načítaval ako prvý
 - Session cookie má secure=True ako default; vypína ho len explicitné DAYLOG_INSECURE_COOKIE=1 (lokálny http://localhost). Atribúty cookie sú na jednom mieste: auth.set_session_cookie() / clear_session_cookie(), main.py ich len volá. Duplicitné SESSION_MAX_AGE z main.py odstránené

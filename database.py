@@ -308,21 +308,6 @@ def normalize_time(s):
     return s
 
 
-def create_event(entry_id, user_id, event_type, value, event_time=None, note=None, catalog_id=None):
-    conn = get_db()
-    now = datetime.utcnow().isoformat()
-    cur = conn.execute(
-        """INSERT INTO events
-           (entry_id, user_id, event_time, event_type, value, note, catalog_id, confirmed, created_at)
-           VALUES (?,?,?,?,?,?,?,0,?)""",
-        (entry_id, user_id, normalize_time(event_time), event_type, value, note, catalog_id, now)
-    )
-    conn.commit()
-    event_id = cur.lastrowid
-    conn.close()
-    return event_id
-
-
 def get_events_by_entry(entry_id):
     conn = get_db()
     rows = conn.execute(
@@ -378,32 +363,81 @@ def delete_entry(entry_id: int):
     conn.close()
 
 
-def update_entry_text(entry_id: int, text: str, entry_date: str = None, entry_time: str = None):
-    conn = get_db()
-    if entry_date is not None:
-        conn.execute(
-            "UPDATE entries SET text=?, entry_date=?, entry_time=? WHERE id=?",
-            (text, entry_date, entry_time or None, entry_id)
-        )
-    else:
-        conn.execute("UPDATE entries SET text=? WHERE id=?", (text, entry_id))
-    conn.commit()
-    conn.close()
-
-
-def replace_entry_events(entry_id: int, user_id: int, events: list):
-    conn = get_db()
-    conn.execute("DELETE FROM events WHERE entry_id = ?", (entry_id,))
+def _insert_events(cur, entry_id: int, user_id: int, events: list, confirmed: int):
+    """Vloží eventy existujúcim kurzorom — VOLAŤ LEN vnútri otvorenej transakcie.
+    Vlastný commit ani close nerobí, aby sa dal spojiť s ďalšími zápismi."""
     now = datetime.utcnow().isoformat()
-    for ev in events:
-        conn.execute(
+    for ev in events or []:
+        cur.execute(
             """INSERT INTO events
                (entry_id, user_id, event_time, event_type, value, note, catalog_id, confirmed, created_at)
-               VALUES (?,?,?,?,?,?,?,1,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?)""",
             (entry_id, user_id, normalize_time(ev.get("event_time")), ev.get("event_type"),
-             ev.get("value"), ev.get("note"), ev.get("catalog_id"), now)
+             ev.get("value"), ev.get("note"), ev.get("catalog_id"), confirmed, now)
         )
-    conn.commit()
+
+
+def create_entry_with_events(entry_date, text, events, entry_time=None, source="typed",
+                             user_id=None, photo_path=None, llm_analysis=None,
+                             llm_model=None, llm_processed_at=None):
+    """Zapíše entry AJ všetky jeho eventy v jednej transakcii na jednom spojení.
+    Buď všetko, alebo nič — pri chybe ROLLBACK a výnimka ide ďalej.
+    Vráti id nového entry. Rovnaký vzor ako merge_catalog_items()."""
+    conn = get_db()
+    conn.isolation_level = None   # manuálna transakcia (BEGIN/COMMIT/ROLLBACK)
+    cur = conn.cursor()
+    try:
+        now = datetime.utcnow().isoformat()
+        cur.execute("BEGIN")
+        cur.execute(
+            """INSERT INTO entries
+               (user_id, created_at, entry_date, entry_time, text, source, photo_path,
+                llm_analysis, llm_model, llm_processed_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (user_id, now, entry_date, entry_time, text, source, photo_path,
+             llm_analysis, llm_model, llm_processed_at)
+        )
+        entry_id = cur.lastrowid
+        # confirmed=0 — rovnaká sémantika ako doterajšie create_event()
+        _insert_events(cur, entry_id, user_id, events, confirmed=0)
+        cur.execute("COMMIT")
+    except Exception:
+        try:
+            cur.execute("ROLLBACK")
+        except Exception:
+            pass
+        conn.close()
+        raise
+    conn.close()
+    return entry_id
+
+
+def update_entry_with_events(entry_id: int, user_id: int, text: str, events: list,
+                             entry_date: str = None, entry_time: str = None):
+    """Editácia záznamu: text/dátum/čas AJ výmena eventov v jednej transakcii.
+    Pri zlyhaní sa nezmení nič — ani text, ani eventy."""
+    conn = get_db()
+    conn.isolation_level = None
+    cur = conn.cursor()
+    try:
+        cur.execute("BEGIN")
+        if entry_date is not None:
+            cur.execute(
+                "UPDATE entries SET text=?, entry_date=?, entry_time=? WHERE id=?",
+                (text, entry_date, entry_time or None, entry_id)
+            )
+        else:
+            cur.execute("UPDATE entries SET text=? WHERE id=?", (text, entry_id))
+        cur.execute("DELETE FROM events WHERE entry_id = ?", (entry_id,))
+        _insert_events(cur, entry_id, user_id, events, confirmed=1)
+        cur.execute("COMMIT")
+    except Exception:
+        try:
+            cur.execute("ROLLBACK")
+        except Exception:
+            pass
+        conn.close()
+        raise
     conn.close()
 
 

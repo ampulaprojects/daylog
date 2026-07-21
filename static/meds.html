@@ -558,6 +558,15 @@
         </div>`;
     }
 
+    // Chybová hláška z FastAPI: {"detail": "..."} → čitateľný text, nie surové JSON
+    // (rovnaký helper je aj v index.html a catalog.html — projekt nemá build,
+    //  zdieľanie JS medzi stránkami je samostatné rozhodnutie)
+    async function errDetail(resp) {
+        let m = await resp.text();
+        try { m = JSON.parse(m).detail || m; } catch (e) {}
+        return m;
+    }
+
     // ── Render & Sortable ─────────────────────────────────────────────────────
 
     async function loadMeds() {
@@ -632,8 +641,15 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(items.map(x => ({ id: x.id, sort_order: x.sort_order })))
             });
-            if (!resp.ok) console.error('Reorder failed:', await resp.text());
-        } catch(e) { console.error('Reorder error:', e); }
+            if (resp.status === 401) { location.href = '/login'; return; }
+            if (!resp.ok) throw new Error(await errDetail(resp));
+        } catch(e) {
+            console.error('Reorder zlyhal:', e);
+            // Poradie sa vizuálne UŽ presunulo — načítaj stav zo servera späť,
+            // aby zoznam nezobrazoval niečo, čo nie je uložené.
+            alert('Poradie sa NEULOŽILO, vraciam pôvodné: ' + e.message);
+            await loadMeds();
+        }
     }
 
     async function moveCard(id, dir) {
@@ -776,16 +792,28 @@
     async function deleteMed(id) {
         const m = meds.find(x => x.id === id);
         if (!confirm(`Zmazať liek "${m?.name}"? Táto akcia je nevratná.`)) return;
-        const resp = await fetch(`/medications/${id}`, { method: 'DELETE' });
-        if (resp.ok || resp.status === 204) {
+        try {
+            const resp = await fetch(`/medications/${id}`, { method: 'DELETE' });
+            if (resp.status === 401) { location.href = '/login'; return; }
+            if (!resp.ok && resp.status !== 204) throw new Error(await errDetail(resp));
             if (editingId === id) editingId = null;
             await loadMeds();
+        } catch(e) {
+            console.error('Mazanie lieku zlyhalo:', e);
+            alert('Liek sa nepodarilo zmazať: ' + e.message);
         }
     }
 
     async function toggleActive(id, active) {
-        const resp = await fetch(`/medications/${id}/active?active=${active === 1}`, { method: 'PATCH' });
-        if (resp.ok) await loadMeds();
+        try {
+            const resp = await fetch(`/medications/${id}/active?active=${active === 1}`, { method: 'PATCH' });
+            if (resp.status === 401) { location.href = '/login'; return; }
+            if (!resp.ok) throw new Error(await errDetail(resp));
+            await loadMeds();
+        } catch(e) {
+            console.error('Zmena stavu lieku zlyhala:', e);
+            alert('Stav lieku sa nepodarilo zmeniť: ' + e.message);
+        }
     }
 
     function toggleShowInactive() {
