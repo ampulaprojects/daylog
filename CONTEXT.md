@@ -68,10 +68,14 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 - OneDrive ako druhý backup cieľ
 - Režim liekov Fáza 1 (evidencia) — HOTOVÉ; Fáza 2 (porovnanie eventov s režimom, detekcia odchýlok) — odložené
 - Napojenie /catalog/lookup na LLM extrakciu eventov (normalizácia názvov pri zápise)
-- Trvalé testy (tests/test_api.py) — zvážiť pri Fáze 2 liekov
+- Trvalé testy: integrita katalógu hotová (tests/test_catalog_integrity.py); API testy (tests/test_api.py) stále chýbajú. Pozor: pytest nie je nainštalovaný, testy sú preto spustiteľné aj cez `python tests/test_catalog_integrity.py`
 - datetime.utcnow() deprecated — nahradiť pri väčšom zásahu do database.py
 - Zvážiť EAN ako atomické pole (zatiaľ v extracted_raw)
 - Poznámka: vzorka katalógu je zaťažená doplnkami; pre liekové rozhodnutia dôležité reálne SK lieky syna
+- PRAGMA foreign_keys nie je zapnutá; FK nie sú za behu vynucované, events.catalog_id a med_schedule.catalog_id nemajú ani REFERENCES. Integrita visí len na aplikačnej logike. Zapnutie vyžaduje rozhodnutie o ON DELETE a prestavbu tabuliek
+- POST /entries/confirm nie je atomické — entry a eventy sa zapisujú cez samostatné spojenia a commity; pri zlyhaní zostane neúplný záznam
+- Fáza 2 liekov naráža na dátový model: jeden event často obsahuje viac liekov naraz (napr. "3× Ofriril, 1/2 Tisercin, 1/4 Fevarin"), ale catalog_id je jediná hodnota. Z 507 eventov je 104 typu liek, z toho len 37 má catalog_id. Treba rozhodnúť medzi rozbitím eventov na jeden liek = jeden event, alebo spojovacou tabuľkou event_meds
+- V dátach sú cyrilické homoglyfy z diktovania (Ofriлril, Tisercinу) — párovanie cez aliasy ich musí normalizovať; riešiteľné deterministicky, bez LLM
 
 ## Poznámky / pasce
 
@@ -83,13 +87,30 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 - PIL nájde len reálne SK lieky (sukl.sk/adc.sk); zahraničné doplnky poctivo vráti "nenašiel" — to je zámer (poistka proti halucinácii)
 - Zlučovanie liekov je nezvratné a dotýka sa eventov (catalog_id) — poradie kritické: prepoj eventy → over 0 osirených → až potom zmaž duplikát. Pred zlúčením na produkcii sa robí záloha daylog.db.pre-merge.
 - Dual-mode endpoint (HTML/JSON na jednej URL podľa Accept) potrebuje Vary: Accept, inak prehliadač cacheuje jednu podobu a zamieňa ich; čistejšie je oddeliť JSON API na vlastnú URL.
+- Osirené odkazy vznikajú ticho, lebo SQLite bez PRAGMA foreign_keys nič nekontroluje. Každá nová väzba cez *_id potrebuje vlastnú aplikačnú ochranu, kým nie je FK enforcement zapnutý.
+- Lokálny .env musí obsahovať DAYLOG_SECRET (aspoň 32 znakov) aj DAYLOG_INSECURE_COOKIE=1, inak sa appka buď nespustí, alebo sa cez http://localhost nedá prihlásiť (secure cookie prehliadač po HTTP nepošle). Na VPS .env NIE JE — secure preto ostáva zapnutý a DAYLOG_SECRET ide zo systemd drop-inu
+- deploy.ps1 NEREŠTARTUJE daylog.service — po každom deploy treba ručne `systemctl restart daylog`, inak beží starý kód.
 
 ## Changelog
+
+### 2026-07-21
+- Blok 2A — fail-fast na secrete: auth.py už nemá žiadny fallback. Pri importe overí DAYLOG_SECRET (resolve_secret) a pri chýbajúcom, prázdnom, kratšom než 32 znakov alebo starom "daylog-dev-secret-2026" vyhodí SecretConfigError so SK návodom (hodnotu secretu nikdy nevypisuje). Padá pri ŠTARTE, nie až pri prihlásení — auth sa importuje z main.py, takže uvicorn ani nenabehne
+- auth.py teraz sám volá load_dotenv() — importuje sa skôr než llm.py, ktorý dovtedy .env načítaval ako prvý
+- Session cookie má secure=True ako default; vypína ho len explicitné DAYLOG_INSECURE_COOKIE=1 (lokálny http://localhost). Atribúty cookie sú na jednom mieste: auth.set_session_cookie() / clear_session_cookie(), main.py ich len volá. Duplicitné SESSION_MAX_AGE z main.py odstránené
+- tests/test_auth_secret.py (8 testov): validácia hodnoty + reálne odmietnutie štartu v samostatnom procese. Test "chýbajúci secret" beží nad kópiou auth.py v temp adresári, lebo projektový .env by inak secret dodal
+- Security: DAYLOG_SECRET nastavený na VPS cez systemd drop-in env.conf. Príčina: auth.py mal fallback "daylog-dev-secret-2026", ktorý je v gite — session cookie sa dala sfalšovať a prihlásiť sa ako ľubovoľný používateľ. Reštart zneplatnil všetky staré session (očakávané, nutné znovu prihlásenie). Otvorené: auth.py by mal pri chýbajúcom secrete odmietnuť štart, cookie nemá secure=True
+- Integrita katalógu: delete_catalog_item() už nedovolí zmazať položku, na ktorú odkazujú eventy alebo režim — vráti HTTP 409 s počtami a odporučí zlúčenie. Príčina: holý DELETE bez kontroly väzieb vyrobil na produkcii 4 osirené eventy. Únikový východ pre používateľa zostáva deaktivácia (active=0)
+- merge_catalog_items() prepája okrem events.catalog_id aj med_schedule.catalog_id, v tej istej transakcii, a kontrola osirených beží nad OBOMA tabuľkami. Príčina: merge vznikol pred med_schedule.catalog_id a o režime nevedel — 9 z 11 riadkov režimu má catalog_id, takže zlúčenie použitej položky by ticho rozbilo režim. Kontrola porovnáva PRÍRASTOK osirených, nie absolútny počet (absolútna kontrola by zablokovala každý merge kvôli cudzej, staršej chybe v dátach)
+- Oprava dát na produkcii: fix_orphan_events.py (dry-run default, --apply na zápis, mapovanie v ORPHAN_MAP) prepojil 4 osirené eventy Orfiril z neexistujúceho catalog_id=1 na id=8 (Orfiril long). Pred spustením záloha daylog.db.pre-orphanfix-2. Po oprave 0 osirených v events aj med_schedule, integrity_check ok
+- Prvé trvalé testy: tests/test_catalog_integrity.py (6 testov, vlastná dočasná DB cez tempfile, nikdy sa nedotknú daylog.db). Pokrývajú blokovanie delete, merge vrátane med_schedule, 0 osirených po merge, dry-run nič nezapíše
+- UI fix: deleteItem v static/catalog.html hlásil "Zmazané" pri každom HTTP statuse — tichý úspech by zatajil aj novú 409-ku
+- Diagnostika odhalila, že lokálna a produkčná DB sa výrazne líšia (produkcia 109 entries / 507 events / 11 katalóg vs lokál 8 / 30 / 9). Závery z lokálnej DB neplatia pre produkciu
 
 ### 2026-07-20
 - Fix: prázdny dropdown "Z katalógu" v /meds — JSON zoznam katalógu presunutý na samostatný GET /catalog/list (vždy JSON, Cache-Control: no-store), defenzívne Vary: Accept na dual-mode /catalog
 - Príčina: prehliadač vracal zacacheovaný HTML namiesto JSON (chýbal Vary: Accept na /catalog), r.json() zlyhal, tichý catch → prázdny dropdown
 - Frontend fetche (meds, index, catalog) presmerované na /catalog/list; loadCatalogList má console.error namiesto tichého catchu
+- Prepojenie všetkých troch vrstiev cez catalog_id: katalóg (čo je liek) ↔ med_schedule (kedy sa má brať) ↔ events (kedy sa reálne bral) — pridanie lieku do režimu výberom z katalógu
 
 ### 2026-07-19
 - Zlučovanie duplicitných liekov v katalógu: POST /catalog/merge, porovnávací panel s výberom polí, transakčné (celé alebo nič), prepojí eventy z B na A PRED zmazaním B, overí 0 osirených odkazov (inak rollback), zlúči aliasy + fotky; B sa natvrdo zmaže

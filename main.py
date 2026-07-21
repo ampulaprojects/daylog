@@ -20,13 +20,14 @@ from database import (
     mark_pil_not_found, merge_catalog_items, CatalogInUseError,
     get_usage_totals, get_usage_by_function, get_recent_usage
 )
-from auth import verify_password, create_session_token, decode_session_token
+from auth import (
+    verify_password, create_session_token, decode_session_token,
+    set_session_cookie, clear_session_cookie,
+)
 from llm import extract_events, transcribe_photo, scan_med_package, fetch_pil_info
 
 UPLOAD_DIR = pathlib.Path("uploads")
 app = FastAPI()
-
-SESSION_MAX_AGE = 30 * 24 * 3600
 
 
 @app.on_event("startup")
@@ -125,14 +126,14 @@ def login(username: str = Form(...), password: str = Form(...)):
         return RedirectResponse(url="/login?error=1", status_code=302)
     token = create_session_token(user["id"])
     resp = RedirectResponse(url="/", status_code=302)
-    resp.set_cookie("session", token, max_age=SESSION_MAX_AGE, httponly=True, samesite="lax")
+    set_session_cookie(resp, token)
     return resp
 
 
 @app.post("/logout")
 def logout():
     resp = RedirectResponse(url="/login", status_code=302)
-    resp.delete_cookie("session")
+    clear_session_cookie(resp)
     return resp
 
 
