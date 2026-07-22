@@ -150,6 +150,25 @@ def init_db():
             context TEXT
         )
     """)
+    # Jeden event môže obsahovať viac liekov naraz ("3× Orfiril, 1/2 Tisercin")
+    # a stav sa medzi nimi líši — preto stav (status) patrí na liek, nie na event.
+    # events.catalog_id zostáva ako legacy, táto tabuľka ho nenahrádza ani nemaže.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS event_meds (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+            catalog_id INTEGER REFERENCES med_catalog(id),
+            raw_name TEXT NOT NULL,
+            qty REAL,
+            unit TEXT,
+            status TEXT NOT NULL,
+            status_note TEXT,
+            source TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_event_meds_event ON event_meds(event_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_event_meds_catalog ON event_meds(catalog_id)")
     conn.commit()
     conn.close()
 
