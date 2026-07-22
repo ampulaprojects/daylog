@@ -65,10 +65,15 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 
 ## Otvorené úlohy
 
+- NALIEHAVÉ pred plným využitím Fázy 2: appka pri /entries/confirm ani pri editácii NEZAPISUJE do event_meds — tabuľka začne zaostávať za novými eventmi hneď od migrácie. Treba doplniť populáciu event_meds do zápisovej cesty, inak sa migrácia musí opakovať
+- Blok 3C: PRAGMA foreign_keys je na produkcii stále OFF → ON DELETE CASCADE na event_meds nefunguje a zmazanie eventu nechá osirené riadky. Zapnutie vyžaduje rozhodnutie o ON DELETE pre všetky väzby a prestavbu tabuliek events/med_schedule (nemajú ani REFERENCES). Dovtedy občas spustiť kontrolu osirených: `SELECT COUNT(*) FROM event_meds m LEFT JOIN events e ON m.event_id=e.id WHERE e.id IS NULL`
+- NÁPAD (Jan) — samoučenie aliasov: keď LLM extrakcia nenájde názov v katalógu, ponúknuť používateľovi výber z katalógu; pri potvrdení sa daný tvar automaticky pridá ako alias, prípadne sa založí nová položka. Katalóg by rástol z reálneho používania (bottom-up) a zacelil dieru s doplnkami. Patrí k review flow Fázy 2 / dennému sumáru — je to princíp "návrh na potvrdenie" aplikovaný na párovanie názvov
+- Doplnky bez položky v katalógu (35 riadkov event_meds s catalog_id NULL): Magnetit je vyriešený, zvyšok čaká na Janovo rozhodnutie, čo sú a či ich zakladať — glycín, probiotikum, magnézium, Srdcín, Losetan, Codony, Skenar, Oftalmilol, mozog, B komplex, D K3, vitamín C, BX, Magm
 - OneDrive ako druhý backup cieľ
-- Režim liekov Fáza 1 (evidencia) — HOTOVÉ; Fáza 2 (porovnanie eventov s režimom, detekcia odchýlok) — odložené
+- Režim liekov: Fáza 1 (evidencia) HOTOVÁ. Fáza 2 — porovnanie event_meds s med_schedule a detekcia odchýlok — je ĎALŠÍ VEĽKÝ CIEĽ. Odchýlka sa smie prezentovať len ako NÁVRH NA POTVRDENIE, nikdy ako tvrdenie: absencia záznamu nie je dôkaz nepodania (viď analýza pokrytia)
+- Denný sumár ako mechanizmus uzatvárania dňa — otázky typu "chýba záznam o večernej dávke, bol podaný?" a odpovede sa ukladajú ako eventy so stavom. Tým sa rozlíši "nezapísané" od "nepodané", čo je práve to, čo dnešné dáta spätne rozlíšiť nevedia. Spojené s Fázou 2
 - Napojenie /catalog/lookup na LLM extrakciu eventov (normalizácia názvov pri zápise)
-- Trvalé testy: integrita katalógu hotová (tests/test_catalog_integrity.py); API testy (tests/test_api.py) stále chýbajú. Pozor: pytest nie je nainštalovaný, testy sú preto spustiteľné aj cez `python tests/test_catalog_integrity.py`
+- Trvalé testy: 6 súborov v tests/ (catalog_integrity, auth_secret, entry_atomicity, event_meds, add_aliases, migrate_event_meds), spolu 62 testov; API testy (tests/test_api.py) stále chýbajú. Pozor: pytest nie je nainštalovaný, každý súbor je preto spustiteľný aj priamo cez `python tests/test_*.py`
 - profile.html — zmena hesla nemá fetch v try/catch, výpadok siete prejde ticho (kozmetika, neurgentné)
 - /medications/* endpointy nemajú server-side ošetrenie chýb ani logovanie (na rozdiel od /entries/*) — pri DB chybe vrátia holé Internal Server Error bez SK hlášky
 - DELETE /medications/{id} a PATCH /medications/{id}/active nekontrolujú existenciu — mazanie neexistujúceho lieku vráti 204 ako úspech
@@ -77,7 +82,7 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 - Zvážiť EAN ako atomické pole (zatiaľ v extracted_raw)
 - Poznámka: vzorka katalógu je zaťažená doplnkami; pre liekové rozhodnutia dôležité reálne SK lieky syna
 - PRAGMA foreign_keys nie je zapnutá; FK nie sú za behu vynucované, events.catalog_id a med_schedule.catalog_id nemajú ani REFERENCES. Integrita visí len na aplikačnej logike. Zapnutie vyžaduje rozhodnutie o ON DELETE a prestavbu tabuliek
-- Fáza 2 liekov naráža na dátový model: jeden event často obsahuje viac liekov naraz (napr. "3× Ofriril, 1/2 Tisercin, 1/4 Fevarin"), ale catalog_id je jediná hodnota. Z 507 eventov je 104 typu liek, z toho len 37 má catalog_id. Treba rozhodnúť medzi rozbitím eventov na jeden liek = jeden event, alebo spojovacou tabuľkou event_meds
+- ~~Fáza 2 liekov naráža na dátový model (viac liekov v jednom evente vs jediné catalog_id)~~ — VYRIEŠENÉ v Bloku 3A+3B spojovacou tabuľkou event_meds; eventy sa nerozbíjali, zostali ako sú
 - V dátach sú cyrilické homoglyfy z diktovania (Ofriлril, Tisercinу) — párovanie cez aliasy ich musí normalizovať; riešiteľné deterministicky, bez LLM
 
 ## Poznámky / pasce
@@ -96,8 +101,20 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 - errDetail() je duplikovaný v index.html, catalog.html a meds.html. Projekt nemá build, zdieľanie JS medzi stránkami je samostatné rozhodnutie
 - Lokálny .env musí obsahovať DAYLOG_SECRET (aspoň 32 znakov) aj DAYLOG_INSECURE_COOKIE=1, inak sa appka buď nespustí, alebo sa cez http://localhost nedá prihlásiť (secure cookie prehliadač po HTTP nepošle). Na VPS .env NIE JE — secure preto ostáva zapnutý a DAYLOG_SECRET ide zo systemd drop-inu
 - deploy.ps1 NEREŠTARTUJE daylog.service — po každom deploy treba ručne `systemctl restart daylog`, inak beží starý kód.
+- Zdroj pravdy pre lieky je od Bloku 3B tabuľka event_meds, NIE events.catalog_id. Legacy stĺpec sa nemenil a zaostáva (43 hodnôt vs 142 spárovaných riadkov v event_meds). Kód Fázy 2 musí čítať event_meds, inak pracuje s tretinou dát
+- Parser (parse_med_events) páruje názvy PODREŤAZCOM, živá extrakcia (find_by_alias v database.py) páruje CELÝ reťazec presne. Sú to dve rôzne čísla pokrytia — parserových 80 % neznamená, že toľko spáruje appka pri zápise. Nezamieňať pri hodnotení Fázy 2
+- Analytické a migračné skripty (analyze_med_events, parse_med_events, add_aliases, migrate_event_meds) sú v repe, ale app runtime ich NEVOLÁ — spúšťajú sa výhradne ručne. load_catalog/variant_matches žijú len v nich; appka páruje cez find_by_alias v database.py. Zmena párovacej logiky v skriptoch teda nemení správanie bežiacej appky
+- Rollback dátovej zmeny cez obnovu celej zálohy starne s každým novým záznamom — pri vracaní aliasov alebo migrácie je bezpečnejší cielený UPDATE/DELETE než návrat celej DB (inak sa stratia záznamy zapísané po zálohe)
 
 ## Changelog
+
+### 2026-07-22
+- Bezpečnosť (Blok 2A): auth.py odmietne štart bez DAYLOG_SECRET — vyžaduje aspoň 32 znakov a odmieta aj starý fallback "daylog-dev-secret-2026". Fail-fast pri ŠTARTE, nie až pri prihlásení, aby sa nebezpečný kľúč nemohol pri budúcej chybe v konfigurácii ticho vrátiť. Session cookie má secure=True, vypnúť sa dá len vedome cez DAYLOG_INSECURE_COOKIE=1 pre lokálny vývoj na http://localhost
+- Atomický zápis (Blok 2B): POST /entries/confirm aj editácia záznamu zapisujú entry + eventy v JEDNEJ transakcii (create_entry_with_events, update_entry_with_events). Príčina: predtým mala každá operácia vlastné spojenie a commit — pri zlyhaní zostal neúplný záznam, a pri editácii rozsyp text↔eventy, lebo update_entry_text commitol text ešte pred výmenou eventov. Chyby idú do serverového logu cez log.exception a používateľovi ako zrozumiteľná SK hláška (errDetail) — koniec tichých zlyhaní. Zmazaný mŕtvy kód: create_event, update_entry_text, replace_entry_events
+- Katalóg — nové aliasy (Blok 3A.5): pridaných 7 aliasov k 5 položkám (Orifiril/Orifril → Orfiril long, Karbazín → Carnosine Younger, Magtein + Magnetit → Magtein Magnesium L-Threonat, B6 → Vitamin B6, Tiamín → Thiamin). Magnetit = Magtein potvrdil Jan z vlastnej znalosti, parser to sám navrhnúť nemohol ("magnetit" je existujúce slovo, nie zjavný preklep). Živá extrakcia (find_by_alias) ich už páruje, takže nové eventy dostanú catalog_id
+- event_meds (Blok 3A+3B) — JADRO PRE FÁZU 2: nová tabuľka rozkladá liekové eventy na jednotlivé lieky (event_id, catalog_id nullable, raw_name ako povinný audit trail pôvodného textu, qty, unit, status, status_note, source). Príčina: 26 % eventov obsahuje viac liekov v jednom value ("3× Ofriril, 1/2 Tisercin, 1/4 Fevarin") a jediné catalog_id na evente to neunesie; navyše sa stav líši medzi liekmi v tom istom evente, preto status patrí na liek, nie na event
+- Migrácia event_meds: 120 liekových eventov → 177 riadkov, všetky source='migracia' (natrvalo označuje dáta, ktoré nikto nepotvrdil). Idempotentná — migrujú sa len eventy bez existujúcich riadkov, druhý beh vložil 0 a nič nezdvojil. Pred zápisom záloha daylog.db.pre-eventmeds. Výsledok: 169 podane / 8 neznamy / 35 riadkov s catalog_id NULL (doplnky mimo katalógu)
+- status sa NEODVODZUJE automaticky: pri negatívnom alebo nejednoznačnom markeri (nedostal, vynechan*, zabudl*, nepodan*, oneskoren*…) dostane riadok status='neznamy' a celý pôvodný text ide do status_note. Príčina: v note sú vety typu "Tisercin v tomto čase nedostal" — bez tohto pravidla by Fáza 2 tvrdila pravý opak reality
 
 ### 2026-07-21
 - Blok 2B — atomický zápis: create_entry_with_events() zapíše entry aj všetky eventy v jednej transakcii na jednom spojení, update_entry_with_events() to isté pre editáciu (text/dátum/čas + výmena eventov). Pri chybe ROLLBACK a výnimka ide ďalej. Vzor prevzatý z merge_catalog_items() (isolation_level=None, BEGIN/COMMIT/ROLLBACK), spoločný _insert_events() vkladá eventy existujúcim kurzorom
