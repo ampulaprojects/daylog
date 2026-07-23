@@ -157,7 +157,7 @@ def test_cascade_does_not_fire_without_pragma(db):
 def test_split_combo_event(db):
     """Kombo event sa rozloží na správny počet riadkov."""
     cat = catalog_of(db)
-    rows, _ = parse_event("3× Ofriril, 1/2 Tisercin, 1/4 Fevarin", None, cat)
+    rows, _ = parse_event("3× Ofriril, 1/2 Tisercin, 1/4 Fevarin", None, cat, source="migracia")
     assert len(rows) == 3, [r["raw_name"] for r in rows]
     assert [r["catalog_id"] for r in rows] == [8, 16, 17], rows
 
@@ -165,17 +165,17 @@ def test_split_combo_event(db):
 def test_comma_before_dose_is_not_a_second_med(db):
     """Čiarka oddeľujúca DÁVKU od názvu nesmie vyrobiť druhý liek."""
     cat = catalog_of(db)
-    rows, flags = parse_event("3x Orfiril, 1x 1/2 Tisercin", None, cat)
+    rows, flags = parse_event("3x Orfiril, 1x 1/2 Tisercin", None, cat, source="migracia")
     assert len(rows) == 2, [r["raw_name"] for r in rows]
 
-    rows2, flags2 = parse_event("Orfiril, 1/2", None, cat)
+    rows2, flags2 = parse_event("Orfiril, 1/2", None, cat, source="migracia")
     assert len(rows2) == 1, [r["raw_name"] for r in rows2]
     assert any("čiarka" in f for f in flags2), flags2
 
 
 def test_single_med_stays_single(db):
     cat = catalog_of(db)
-    rows, _ = parse_event("1/2 Tisercin", None, cat)
+    rows, _ = parse_event("1/2 Tisercin", None, cat, source="migracia")
     assert len(rows) == 1 and rows[0]["catalog_id"] == 16
 
 
@@ -224,14 +224,14 @@ def test_negative_marker_gives_unknown_status():
 def test_negative_marker_in_note_only(db):
     """Marker stačí v note — status sa nesmie odvodiť len z value."""
     cat = catalog_of(db)
-    rows, flags = parse_event("1/2 Tisercin", "zabudla podať sesterička", cat)
+    rows, flags = parse_event("1/2 Tisercin", "zabudla podať sesterička", cat, source="migracia")
     assert all(r["status"] == "neznamy" for r in rows), rows
     assert rows[0]["status_note"], rows[0]
 
 
 def test_plain_event_is_podane(db):
     cat = catalog_of(db)
-    rows, _ = parse_event("3x Orfiril", None, cat)
+    rows, _ = parse_event("3x Orfiril", None, cat, source="migracia")
     assert all(r["status"] == "podane" for r in rows)
     assert all(r["status_note"] is None for r in rows)
 
@@ -241,7 +241,7 @@ def test_plain_event_is_podane(db):
 def test_homoglyph_matches_but_raw_name_kept(db):
     """Cyrilika sa normalizuje PRI PÁROVANÍ, raw_name zostáva pôvodný."""
     cat = catalog_of(db)
-    rows, flags = parse_event("1/2 Tisercinу", None, cat)      # 'у' = U+0443
+    rows, flags = parse_event("1/2 Tisercinу", None, cat, source="migracia")      # 'у' = U+0443
     assert rows[0]["catalog_id"] == 16, rows
     assert "у" in rows[0]["raw_name"], rows[0]["raw_name"]
     assert any("homoglyf" in f for f in flags), flags
@@ -249,14 +249,14 @@ def test_homoglyph_matches_but_raw_name_kept(db):
 
 def test_source_is_migracia(db):
     cat = catalog_of(db)
-    rows, _ = parse_event("3x Orfiril", None, cat)
+    rows, _ = parse_event("3x Orfiril", None, cat, source="migracia")
     assert all(r["source"] == "migracia" for r in rows)
 
 
 def test_unknown_supplement_gets_null_catalog_id(db):
     """Doplnok mimo katalógu nesmie zablokovať rozklad — catalog_id = NULL."""
     cat = catalog_of(db)
-    rows, _ = parse_event("2x Magnetit, 1x Karnozin", None, cat)
+    rows, _ = parse_event("2x Magnetit, 1x Karnozin", None, cat, source="migracia")
     assert len(rows) == 2
     assert all(r["catalog_id"] is None for r in rows), rows
     assert all(r["raw_name"] for r in rows), "raw_name je povinný"
@@ -269,12 +269,12 @@ def test_short_name_is_not_swallowed_as_dose(db):
     ticho zlúčilo '1× B6' s predchádzajúcim liekom a B6 zmizol.
     """
     cat = catalog_of(db)
-    rows, _ = parse_event("2x Magnetit, 1x B6", None, cat)
+    rows, _ = parse_event("2x Magnetit, 1x B6", None, cat, source="migracia")
     assert len(rows) == 2, [r["raw_name"] for r in rows]
     assert rows[1]["raw_name"] == "1x B6", rows[1]
     assert rows[1]["qty"] == 1.0
 
-    rows2, _ = parse_event("1/2 Tisercin, 2x Magnetit, 1x Karnozin, 1x B6", None, cat)
+    rows2, _ = parse_event("1/2 Tisercin, 2x Magnetit, 1x Karnozin, 1x B6", None, cat, source="migracia")
     assert len(rows2) == 4, [r["raw_name"] for r in rows2]
 
 

@@ -3,6 +3,10 @@ import sqlite3
 import os
 import json
 
+# med_parser NEIMPORTUJE database.py (žiadny kruhový import) — je to čistý
+# deterministický parser nad odovzdaným spojením a reťazcami.
+from med_parser import parse_event, load_catalog
+
 DB_PATH = os.environ.get("DAYLOG_DB", "daylog.db")
 
 
@@ -375,16 +379,42 @@ def update_event(event_id, **kwargs):
 
 
 def delete_entry(entry_id: int):
+    """Zmaže záznam aj jeho eventy v jednej transakcii (buď všetko, alebo nič).
+    PRAGMA foreign_keys je v runtime OFF → ON DELETE CASCADE nezmaže event_meds
+    liekových eventov; mažeme ich preto explicitne PRED zmazaním events, inak by
+    osireli. Poradie: event_meds → events → entries."""
     conn = get_db()
-    conn.execute("DELETE FROM events WHERE entry_id = ?", (entry_id,))
-    conn.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
-    conn.commit()
+    conn.isolation_level = None   # manuálna transakcia (BEGIN/COMMIT/ROLLBACK)
+    cur = conn.cursor()
+    try:
+        cur.execute("BEGIN")
+        cur.execute(
+            "DELETE FROM event_meds WHERE event_id IN "
+            "(SELECT id FROM events WHERE entry_id = ?)", (entry_id,)
+        )
+        cur.execute("DELETE FROM events WHERE entry_id = ?", (entry_id,))
+        cur.execute("DELETE FROM entries WHERE id = ?", (entry_id,))
+        cur.execute("COMMIT")
+    except Exception:
+        try:
+            cur.execute("ROLLBACK")
+        except Exception:
+            pass
+        conn.close()
+        raise
     conn.close()
 
 
-def _insert_events(cur, entry_id: int, user_id: int, events: list, confirmed: int):
+def _insert_events(cur, entry_id: int, user_id: int, events: list, confirmed: int,
+                   source: str, catalog: list):
     """Vloží eventy existujúcim kurzorom — VOLAŤ LEN vnútri otvorenej transakcie.
-    Vlastný commit ani close nerobí, aby sa dal spojiť s ďalšími zápismi."""
+    Vlastný commit ani close nerobí, aby sa dal spojiť s ďalšími zápismi.
+
+    Pri každom liekovom evente hneď po jeho INSERTe rozloží value cez
+    parse_event a vloží riadky do event_meds tým istým kurzorom (rovnaká
+    transakcia). `source` ('confirm'/'edit') sa zapíše do každého riadku,
+    `catalog` je načítaný RAZ volajúcim (nie per event).
+    events.catalog_id (legacy) sa plní ako doteraz — event_meds ho nenahrádza."""
     now = datetime.utcnow().isoformat()
     for ev in events or []:
         cur.execute(
@@ -394,6 +424,18 @@ def _insert_events(cur, entry_id: int, user_id: int, events: list, confirmed: in
             (entry_id, user_id, normalize_time(ev.get("event_time")), ev.get("event_type"),
              ev.get("value"), ev.get("note"), ev.get("catalog_id"), confirmed, now)
         )
+        if ev.get("event_type") != "liek":
+            continue
+        event_id = cur.lastrowid
+        med_rows, _flags = parse_event(ev.get("value"), ev.get("note"), catalog, source=source)
+        for r in med_rows:
+            cur.execute(
+                """INSERT INTO event_meds
+                   (event_id, catalog_id, raw_name, qty, unit, status, status_note, source, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (event_id, r["catalog_id"], r["raw_name"], r["qty"], r["unit"],
+                 r["status"], r["status_note"], r["source"], now)
+            )
 
 
 def create_entry_with_events(entry_date, text, events, entry_time=None, source="typed",
@@ -406,6 +448,7 @@ def create_entry_with_events(entry_date, text, events, entry_time=None, source="
     conn.isolation_level = None   # manuálna transakcia (BEGIN/COMMIT/ROLLBACK)
     cur = conn.cursor()
     try:
+        catalog = load_catalog(conn)   # raz na transakciu, nie per event
         now = datetime.utcnow().isoformat()
         cur.execute("BEGIN")
         cur.execute(
@@ -418,7 +461,8 @@ def create_entry_with_events(entry_date, text, events, entry_time=None, source="
         )
         entry_id = cur.lastrowid
         # confirmed=0 — rovnaká sémantika ako doterajšie create_event()
-        _insert_events(cur, entry_id, user_id, events, confirmed=0)
+        _insert_events(cur, entry_id, user_id, events, confirmed=0,
+                       source="confirm", catalog=catalog)
         cur.execute("COMMIT")
     except Exception:
         try:
@@ -439,6 +483,7 @@ def update_entry_with_events(entry_id: int, user_id: int, text: str, events: lis
     conn.isolation_level = None
     cur = conn.cursor()
     try:
+        catalog = load_catalog(conn)   # raz na transakciu, nie per event
         cur.execute("BEGIN")
         if entry_date is not None:
             cur.execute(
@@ -447,8 +492,16 @@ def update_entry_with_events(entry_id: int, user_id: int, text: str, events: lis
             )
         else:
             cur.execute("UPDATE entries SET text=? WHERE id=?", (text, entry_id))
+        # PRAGMA foreign_keys je v runtime OFF → ON DELETE CASCADE nezmaže
+        # event_meds starých eventov. Preto ich zmažeme explicitne PRED
+        # zmazaním eventov, inak by osireli (event_id na neexistujúci event).
+        cur.execute(
+            "DELETE FROM event_meds WHERE event_id IN "
+            "(SELECT id FROM events WHERE entry_id = ?)", (entry_id,)
+        )
         cur.execute("DELETE FROM events WHERE entry_id = ?", (entry_id,))
-        _insert_events(cur, entry_id, user_id, events, confirmed=1)
+        _insert_events(cur, entry_id, user_id, events, confirmed=1,
+                       source="edit", catalog=catalog)
         cur.execute("COMMIT")
     except Exception:
         try:

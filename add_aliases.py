@@ -147,7 +147,7 @@ def collect_rows(conn, catalog):
             "SELECT ev.id, e.entry_date, ev.value, ev.note FROM events ev "
             "JOIN entries e ON ev.entry_id = e.id WHERE ev.event_type = 'liek' "
             "ORDER BY e.entry_date, ev.id"):
-        parsed, _ = parse_event(e["value"], e["note"], catalog)
+        parsed, _ = parse_event(e["value"], e["note"], catalog, source="migracia")
         for r in parsed:
             rows.append({"event_id": e["id"], "date": e["entry_date"],
                          "raw_name": r["raw_name"], "catalog_id": r["catalog_id"]})

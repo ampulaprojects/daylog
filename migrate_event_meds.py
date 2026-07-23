@@ -23,7 +23,7 @@ from collections import Counter
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from parse_med_events import load_catalog, parse_event
+from med_parser import load_catalog, parse_event
 
 SOURCE = "migracia"
 MED_TYPE = "liek"
@@ -80,7 +80,7 @@ def plan_migration(conn, catalog):
             skipped.append({"event_id": e["id"], "date": e["entry_date"],
                             "value": e["value"], "existing": existing[e["id"]]})
             continue
-        parsed, flags = parse_event(e["value"], e["note"], catalog)
+        parsed, flags = parse_event(e["value"], e["note"], catalog, source="migracia")
         for r in parsed:
             rows.append({
                 "event_id": e["id"],
