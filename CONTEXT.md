@@ -65,7 +65,6 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 
 ## Otvorené úlohy
 
-- NALIEHAVÉ pred plným využitím Fázy 2: appka pri /entries/confirm ani pri editácii NEZAPISUJE do event_meds — tabuľka začne zaostávať za novými eventmi hneď od migrácie. Treba doplniť populáciu event_meds do zápisovej cesty, inak sa migrácia musí opakovať
 - Blok 3C: PRAGMA foreign_keys je na produkcii stále OFF → ON DELETE CASCADE na event_meds nefunguje a zmazanie eventu nechá osirené riadky. Zapnutie vyžaduje rozhodnutie o ON DELETE pre všetky väzby a prestavbu tabuliek events/med_schedule (nemajú ani REFERENCES). Dovtedy občas spustiť kontrolu osirených: `SELECT COUNT(*) FROM event_meds m LEFT JOIN events e ON m.event_id=e.id WHERE e.id IS NULL`
 - NÁPAD (Jan) — samoučenie aliasov: keď LLM extrakcia nenájde názov v katalógu, ponúknuť používateľovi výber z katalógu; pri potvrdení sa daný tvar automaticky pridá ako alias, prípadne sa založí nová položka. Katalóg by rástol z reálneho používania (bottom-up) a zacelil dieru s doplnkami. Patrí k review flow Fázy 2 / dennému sumáru — je to princíp "návrh na potvrdenie" aplikovaný na párovanie názvov
 - Doplnky bez položky v katalógu (35 riadkov event_meds s catalog_id NULL): Magnetit je vyriešený, zvyšok čaká na Janovo rozhodnutie, čo sú a či ich zakladať — glycín, probiotikum, magnézium, Srdcín, Losetan, Codony, Skenar, Oftalmilol, mozog, B komplex, D K3, vitamín C, BX, Magm
@@ -107,6 +106,19 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 - Rollback dátovej zmeny cez obnovu celej zálohy starne s každým novým záznamom — pri vracaní aliasov alebo migrácie je bezpečnejší cielený UPDATE/DELETE než návrat celej DB (inak sa stratia záznamy zapísané po zálohe)
 
 ## Changelog
+
+### 2026-07-24
+- Živé overenie event_meds zápisu na produkcii: confirm-cesta 3× (multi-liek 5/5 riadkov, qty aj aliasy správne, vrátane "300 mg Orfiril" → qty 300/mg), edit-cesta 1× (starý confirm riadok nahradený source='edit', nové event id, 0 osirených — dôkaz, že explicitný DELETE event_meds v edit transakcii funguje)
+- Spätné doplnenie 6 eventov z okna migrácia→deploy (23.7., vznikli pred reštartom služby): dry-run navrhol presne 6, záloha daylog.db.pre-eventmeds2 (integrity_check ok), --apply vložil 6 riadkov so source='migracia' (177→183), nezávislé SQL: 0 bez event_meds, 0 osirených, confirm=5/edit=1 nedotknuté, druhý --apply 0 riadkov (idempotencia). Eventy "lieky"/"vitamíny" (824, 827) majú catalog_id NULL zámerne — generický text, parser nehádže
+- Ponaučenie: medzera vznikla, hoci deploy prišiel deň po migrácii — okno migrácia→deploy treba pri dátových zmenách vždy skontrolovať a dobehnúť
+
+### 2026-07-23
+- Živý zápis event_meds (uzavretie NALIEHAVEJ úlohy): _insert_events po každom INSERTe eventu zachytí lastrowid a pri event_type='liek' rozloží value cez parse_event do event_meds v tej istej transakcii. source='confirm' (nový záznam) vs 'edit' (editácia) — rozlíšené pre audit. Legacy events.catalog_id sa plní ako doteraz, zdroj pravdy zostáva event_meds
+- Nový modul med_parser.py: čisté parserové funkcie presunuté z parse_med_events.py bez zmeny logiky; importujú ho database.py aj skripty (jedna párovacia cesta, nie dve). parse_event má source POVINNÝ bez defaultu — poistka proti tichému 'migracia'; všetky callery doplnené explicitne
+- Osirené event_meds uzavreté na všetkých troch cestách: update_entry_with_events aj delete_entry explicitne mažú event_meds pred mazaním events (PRAGMA foreign_keys OFF → CASCADE nefunguje). delete_entry prerobený z autocommitu na explicitnú transakciu (event_meds → events → entries, pri chybe ROLLBACK)
+- Diagnostika pred zásahom ukázala: medzera od migrácie bola v tej chvíli 0 — zápis nasadený skôr, než sa stihla rozrásť (nakoniec 6 eventov, viď 07-24)
+- tests/test_live_event_meds.py (8 testov): multi-liek confirm, ne-liek 0 riadkov, edit výmena source + 0 osirených, odstránenie lieku editom, rollback, negatívny marker → neznamy, liek mimo katalógu → catalog_id NULL, delete_entry čistí event_meds. Spolu 70 testov
+- ZNÁME OBMEDZENIE pre Fázu 2: edit pregeneruje event_meds parserom — prípadné ručne potvrdené statusy sa editáciou záznamu stratia. Riešiť pri návrhu potvrdení vo Fáze 2
 
 ### 2026-07-22
 - Bezpečnosť (Blok 2A): auth.py odmietne štart bez DAYLOG_SECRET — vyžaduje aspoň 32 znakov a odmieta aj starý fallback "daylog-dev-secret-2026". Fail-fast pri ŠTARTE, nie až pri prihlásení, aby sa nebezpečný kľúč nemohol pri budúcej chybe v konfigurácii ticho vrátiť. Session cookie má secure=True, vypnúť sa dá len vedome cez DAYLOG_INSECURE_COOKIE=1 pre lokálny vývoj na http://localhost
