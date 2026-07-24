@@ -25,6 +25,7 @@ from database import (
 from auth import (
     verify_password, create_session_token, decode_session_token,
     set_session_cookie, clear_session_cookie,
+    is_family, can_modify_entry,
 )
 from llm import extract_events, transcribe_photo, scan_med_package, fetch_pil_info
 
@@ -64,6 +65,16 @@ def require_admin(user=Depends(require_auth)):
     return user
 
 
+def require_family(user=Depends(require_auth)):
+    """Brána pre sekcie Lieky/Katalóg — opatrovatelka sem nesmie (server-side,
+    nielen skryté v UI). Admin/user prejdú ako doteraz."""
+    if not is_family(user["role"]):
+        raise HTTPException(
+            status_code=403,
+            detail="Sekcie Lieky a Katalóg sú len pre členov rodiny.")
+    return user
+
+
 # ── Pages ────────────────────────────────────────────────────────────────────
 
 @app.get("/")
@@ -87,8 +98,12 @@ def profile_page(session: Optional[str] = Cookie(None)):
 
 @app.get("/meds")
 def meds_page(session: Optional[str] = Cookie(None)):
-    if not (decode_session_token(session) if session else None):
+    uid = decode_session_token(session) if session else None
+    user = get_user_by_id(uid) if uid else None
+    if not user:
         return RedirectResponse(url="/login", status_code=302)
+    if not is_family(user["role"]):
+        return RedirectResponse(url="/", status_code=302)
     return FileResponse("static/meds.html")
 
 
@@ -145,7 +160,7 @@ def logout():
 
 @app.get("/me")
 def me(user=Depends(require_auth)):
-    return {"username": user["username"], "role": user["role"]}
+    return {"id": user["id"], "username": user["username"], "role": user["role"]}
 
 
 class ChangePassword(BaseModel):
@@ -299,11 +314,21 @@ class EntryUpdate(BaseModel):
 
 @app.delete("/entries/{entry_id}", status_code=204)
 def delete_entry_endpoint(entry_id: int, user=Depends(require_auth)):
+    entry = get_entry(entry_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Záznam nenájdený")
+    if not can_modify_entry(user, entry):
+        raise HTTPException(status_code=403, detail="Zmazať môžeš len vlastné záznamy.")
     delete_entry(entry_id)
 
 
 @app.put("/entries/{entry_id}")
 def update_entry_endpoint(entry_id: int, body: EntryUpdate, user=Depends(require_auth)):
+    entry = get_entry(entry_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="Záznam nenájdený")
+    if not can_modify_entry(user, entry):
+        raise HTTPException(status_code=403, detail="Upravovať môžeš len vlastné záznamy.")
     events_data = [{"event_time": e.event_time, "event_type": e.event_type,
                     "value": e.value, "note": e.note,
                     "catalog_id": e.catalog_id if e.event_type == "liek" else None}
@@ -384,12 +409,12 @@ class MedBody(BaseModel):
 
 
 @app.get("/medications")
-def list_medications(include_inactive: bool = False, user=Depends(require_auth)):
+def list_medications(include_inactive: bool = False, user=Depends(require_family)):
     return get_medications(include_inactive=include_inactive)
 
 
 @app.post("/medications", status_code=201)
-def add_medication(body: MedBody, user=Depends(require_auth)):
+def add_medication(body: MedBody, user=Depends(require_family)):
     med_id = create_medication(
         name=body.name, kind=body.kind, count=body.count, dose=body.dose,
         unit=body.unit, time_type=body.time_type, time_exact=body.time_exact,
@@ -405,13 +430,13 @@ class ReorderItem(BaseModel):
 
 
 @app.put("/medications/reorder")
-def reorder_meds_endpoint(items: List[ReorderItem], user=Depends(require_auth)):
+def reorder_meds_endpoint(items: List[ReorderItem], user=Depends(require_family)):
     reorder_medications([(item.id, item.sort_order) for item in items])
     return {"ok": True}
 
 
 @app.put("/medications/{med_id}")
-def edit_medication(med_id: int, body: MedBody, user=Depends(require_auth)):
+def edit_medication(med_id: int, body: MedBody, user=Depends(require_family)):
     update_medication(
         med_id=med_id, name=body.name, kind=body.kind, count=body.count,
         dose=body.dose, unit=body.unit, time_type=body.time_type,
@@ -423,12 +448,12 @@ def edit_medication(med_id: int, body: MedBody, user=Depends(require_auth)):
 
 
 @app.delete("/medications/{med_id}", status_code=204)
-def remove_medication(med_id: int, user=Depends(require_auth)):
+def remove_medication(med_id: int, user=Depends(require_family)):
     delete_medication(med_id)
 
 
 @app.patch("/medications/{med_id}/active")
-def toggle_med_active(med_id: int, active: bool, user=Depends(require_auth)):
+def toggle_med_active(med_id: int, active: bool, user=Depends(require_family)):
     set_medication_active(med_id, active)
     return {"id": med_id, "active": active}
 
@@ -494,14 +519,21 @@ def catalog_root(include_inactive: bool = False,
     """HTML stránka katalógu pre prehliadač. Ostáva dual-mode (Accept: application/json
     → JSON) pre spätnú kompatibilitu, ale frontend už na JSON používa /catalog/list.
     Vary: Accept — aby cache nezamieňala HTML a JSON variant pre tú istú URL."""
-    authed = bool(decode_session_token(session)) if session else False
-    if "application/json" in accept.lower():
-        if not authed:
+    uid = decode_session_token(session) if session else None
+    user = get_user_by_id(uid) if uid else None
+    is_json = "application/json" in accept.lower()
+    if not user:
+        if is_json:
             raise HTTPException(status_code=401, detail="Nie si prihlásený")
+        return RedirectResponse(url="/login", status_code=302)
+    if not is_family(user["role"]):
+        # opatrovatelka: katalóg je zablokovaný (na čítanie v UI slúži /catalog/list)
+        if is_json:
+            raise HTTPException(status_code=403, detail="Katalóg je len pre členov rodiny.")
+        return RedirectResponse(url="/", status_code=302)
+    if is_json:
         data = [_catalog_out(i) for i in get_catalog(include_inactive=include_inactive)]
         return JSONResponse(content=data, headers={"Vary": "Accept", "Cache-Control": "no-store"})
-    if not authed:
-        return RedirectResponse(url="/login", status_code=302)
     return FileResponse("static/catalog.html", headers={"Vary": "Accept"})
 
 
@@ -518,7 +550,7 @@ def _resolve_photos(body: CatalogBody):
 
 
 @app.post("/catalog", status_code=201)
-def add_catalog(body: CatalogBody, user=Depends(require_auth)):
+def add_catalog(body: CatalogBody, user=Depends(require_family)):
     photo_path, photos_json = _resolve_photos(body)
     item_id = create_catalog_item(
         canonical_name=body.canonical_name, aliases=json.dumps(body.aliases),
@@ -541,7 +573,7 @@ def catalog_lookup(name: str, user=Depends(require_auth)):
 
 
 @app.post("/catalog/scan")
-async def catalog_scan(files: List[UploadFile] = File(...), user=Depends(require_auth)):
+async def catalog_scan(files: List[UploadFile] = File(...), user=Depends(require_family)):
     """Odfotené krabičky lieku (jedna alebo viac strán) → Claude vision prečíta
     a zlúči údaje. Nič neukladá do katalógu — vráti len návrh polí + cesty k fotkám."""
     UPLOAD_DIR.mkdir(exist_ok=True)
@@ -577,7 +609,7 @@ class PilSaveBody(BaseModel):
 
 
 @app.post("/catalog/{item_id}/fetch-pil")
-def fetch_pil(item_id: int, user=Depends(require_auth)):
+def fetch_pil(item_id: int, user=Depends(require_family)):
     """Dohľadá info z príbalového letáka cez web search. NEUKLADÁ — len návrh.
     Vždy vráti aj zdroj (URL); ak sa nenájde spoľahlivý zdroj, found=False."""
     item = get_catalog_item(item_id)
@@ -606,7 +638,7 @@ def fetch_pil(item_id: int, user=Depends(require_auth)):
 
 
 @app.put("/catalog/{item_id}/pil")
-def save_pil(item_id: int, body: PilSaveBody, user=Depends(require_auth)):
+def save_pil(item_id: int, body: PilSaveBody, user=Depends(require_family)):
     """Uloží POTVRDENÉ dohľadané PIL dáta. Bez zdroja (URL) sa nič neuloží."""
     if not get_catalog_item(item_id):
         raise HTTPException(status_code=404, detail="Položka nenájdená")
@@ -628,7 +660,7 @@ class MergeBody(BaseModel):
 
 
 @app.post("/catalog/merge")
-def merge_catalog(body: MergeBody, user=Depends(require_auth)):
+def merge_catalog(body: MergeBody, user=Depends(require_family)):
     """Zlúči liek merge_id do keep_id (transakčne: uprav A → prepoj eventy →
     over osirené → zmaž B). Vráti súhrn vrátane počtu presunutých eventov."""
     if body.keep_id == body.merge_id:
@@ -646,7 +678,7 @@ def merge_catalog(body: MergeBody, user=Depends(require_auth)):
 
 
 @app.put("/catalog/{item_id}")
-def edit_catalog(item_id: int, body: CatalogBody, user=Depends(require_auth)):
+def edit_catalog(item_id: int, body: CatalogBody, user=Depends(require_family)):
     if not get_catalog_item(item_id):
         raise HTTPException(status_code=404, detail="Položka nenájdená")
     photo_path, photos_json = _resolve_photos(body)
@@ -663,7 +695,7 @@ def edit_catalog(item_id: int, body: CatalogBody, user=Depends(require_auth)):
 
 
 @app.delete("/catalog/{item_id}", status_code=204)
-def remove_catalog(item_id: int, user=Depends(require_auth)):
+def remove_catalog(item_id: int, user=Depends(require_family)):
     try:
         delete_catalog_item(item_id)
     except CatalogInUseError as e:
@@ -681,7 +713,7 @@ def remove_catalog(item_id: int, user=Depends(require_auth)):
 
 
 @app.patch("/catalog/{item_id}/active")
-def toggle_catalog_active(item_id: int, active: bool, user=Depends(require_auth)):
+def toggle_catalog_active(item_id: int, active: bool, user=Depends(require_family)):
     set_catalog_active(item_id, active)
     return {"id": item_id, "active": active}
 

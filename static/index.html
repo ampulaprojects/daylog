@@ -268,8 +268,8 @@
         <div style="display:flex;justify-content:space-between;align-items:center">
             <h1>daylog</h1>
             <div style="display:flex;gap:10px;align-items:center">
-                <a href="/meds" style="font-size:13px;color:#888;text-decoration:none">Lieky</a>
-                <a href="/catalog" style="font-size:13px;color:#888;text-decoration:none">Katalóg</a>
+                <a href="/meds" id="medsLink" style="font-size:13px;color:#888;text-decoration:none">Lieky</a>
+                <a href="/catalog" id="catalogLink" style="font-size:13px;color:#888;text-decoration:none">Katalóg</a>
                 <a href="/usage" id="usageLink" style="display:none;font-size:13px;color:#888;text-decoration:none">Spotreba</a>
                 <a href="/profile" style="font-size:13px;color:#888;text-decoration:none">Profil</a>
                 <form method="POST" action="/logout">
@@ -406,6 +406,7 @@
         };
 
         let loadedEntries    = [];
+        let currentUser      = null;   // z /me — rola + id na skrytie akcií podľa vlastníctva
         let pendingData      = null;
         let editingId        = null;
         let cleanedText      = null;
@@ -785,7 +786,10 @@
             const badge = matched
                 ? `<span class="cat-badge matched">→ ${esc(name || 'v katalógu')}</span>`
                 : `<span class="cat-badge unmatched">nie je v katalógu</span>`;
-            const addBtn = matched
+            // opatrovatelka nesmie do katalógu zapisovať (POST /catalog vráti 403) →
+            // neponúkaj jej ani tlačidlo; rovnaký vzor ako skrývanie Lieky/Katalóg
+            const canAddCat = !currentUser || currentUser.role !== 'opatrovatelka';
+            const addBtn = (matched || !canAddCat)
                 ? ''
                 : `<button type="button" class="cat-add-btn" onclick="openCatAdd(this)">+ Pridať do katalógu</button>`;
             return `${badge}
@@ -1011,16 +1015,21 @@
         }
 
         function entryHtml(e) {
+            // opatrovatelka smie meniť len vlastné → cudzím záznamom neponúkaj
+            // tlačidlá (server ich aj tak odmietne 403). Rodina vidí vždy.
+            const canMod = !currentUser
+                || currentUser.role !== 'opatrovatelka'
+                || e.user_id === currentUser.id;
+            const btns = canMod ? `
+                        <button class="btn-edit-entry" onclick="openEdit(${e.id})">upraviť</button>
+                        <button class="btn-del-entry"  onclick="deleteEntry(${e.id})">zmazať</button>` : '';
             return `
                 <div class="entry-header">
                     <div class="entry-meta">
                         ${esc(e.entry_date)}${e.entry_time ? ' ' + esc(e.entry_time) : ''}
                         ${e.author ? ' · <strong>' + esc(e.author) + '</strong>' : ''}
                     </div>
-                    <div class="entry-btns">
-                        <button class="btn-edit-entry" onclick="openEdit(${e.id})">upraviť</button>
-                        <button class="btn-del-entry"  onclick="deleteEntry(${e.id})">zmazať</button>
-                    </div>
+                    <div class="entry-btns">${btns}</div>
                 </div>
                 <div class="entry-text">${esc(e.text)}</div>
                 ${e.photo_path ? `<div class="entry-thumb"><img src="/photos/${esc(e.photo_path.replace('uploads/',''))}" onclick="openPhoto(this.src)" loading="lazy"></div>` : ''}
@@ -1246,9 +1255,18 @@
         loadEntries();
         renderTypeChips();
 
-        // Spotreba link len pre admina
+        // Rola: Spotreba len pre admina; Lieky/Katalóg skryť opatrovateľke
+        // (server ich aj tak blokuje — UI len neponúka). currentUser využíva
+        // aj entryHtml na skrytie upraviť/zmazať pri cudzích záznamoch.
         fetch('/me').then(r => r.ok ? r.json() : null).then(u => {
-            if (u && u.role === 'admin') document.getElementById('usageLink').style.display = '';
+            if (!u) return;
+            currentUser = u;
+            if (u.role === 'admin') document.getElementById('usageLink').style.display = '';
+            if (u.role === 'opatrovatelka') {
+                document.getElementById('medsLink').style.display = 'none';
+                document.getElementById('catalogLink').style.display = 'none';
+            }
+            renderList();   // prekresli, aby tlačidlá záznamov zohľadnili rolu/vlastníctvo
         }).catch(() => {});
 
         // ── Diktovanie ───────────────────────────────────────────────────────

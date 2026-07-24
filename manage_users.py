@@ -54,7 +54,7 @@ def main():
     pa = sub.add_parser("add-user", help="Vytvor noveho pouzivatela")
     pa.add_argument("username")
     pa.add_argument("password")
-    pa.add_argument("--role", choices=["admin", "user"], default="user",
+    pa.add_argument("--role", choices=["admin", "user", "opatrovatelka"], default="user",
                     help="Rola pouzivatela (predvolene: user)")
 
     args = parser.parse_args()
