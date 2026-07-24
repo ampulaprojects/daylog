@@ -66,7 +66,7 @@ def require_admin(user=Depends(require_auth)):
 
 
 def require_family(user=Depends(require_auth)):
-    """Brána pre sekcie Lieky/Katalóg — opatrovatelka sem nesmie (server-side,
+    """Brána pre sekcie Lieky/Katalóg — asistent sem nesmie (server-side,
     nielen skryté v UI). Admin/user prejdú ako doteraz."""
     if not is_family(user["role"]):
         raise HTTPException(
@@ -527,7 +527,7 @@ def catalog_root(include_inactive: bool = False,
             raise HTTPException(status_code=401, detail="Nie si prihlásený")
         return RedirectResponse(url="/login", status_code=302)
     if not is_family(user["role"]):
-        # opatrovatelka: katalóg je zablokovaný (na čítanie v UI slúži /catalog/list)
+        # asistent: katalóg je zablokovaný (na čítanie v UI slúži /catalog/list)
         if is_json:
             raise HTTPException(status_code=403, detail="Katalóg je len pre členov rodiny.")
         return RedirectResponse(url="/", status_code=302)

@@ -786,9 +786,9 @@
             const badge = matched
                 ? `<span class="cat-badge matched">→ ${esc(name || 'v katalógu')}</span>`
                 : `<span class="cat-badge unmatched">nie je v katalógu</span>`;
-            // opatrovatelka nesmie do katalógu zapisovať (POST /catalog vráti 403) →
-            // neponúkaj jej ani tlačidlo; rovnaký vzor ako skrývanie Lieky/Katalóg
-            const canAddCat = !currentUser || currentUser.role !== 'opatrovatelka';
+            // asistent nesmie do katalógu zapisovať (POST /catalog vráti 403) →
+            // neponúkaj mu ani tlačidlo; rovnaký vzor ako skrývanie Lieky/Katalóg
+            const canAddCat = !currentUser || currentUser.role !== 'asistent';
             const addBtn = (matched || !canAddCat)
                 ? ''
                 : `<button type="button" class="cat-add-btn" onclick="openCatAdd(this)">+ Pridať do katalógu</button>`;
@@ -1015,10 +1015,10 @@
         }
 
         function entryHtml(e) {
-            // opatrovatelka smie meniť len vlastné → cudzím záznamom neponúkaj
+            // asistent smie meniť len vlastné → cudzím záznamom neponúkaj
             // tlačidlá (server ich aj tak odmietne 403). Rodina vidí vždy.
             const canMod = !currentUser
-                || currentUser.role !== 'opatrovatelka'
+                || currentUser.role !== 'asistent'
                 || e.user_id === currentUser.id;
             const btns = canMod ? `
                         <button class="btn-edit-entry" onclick="openEdit(${e.id})">upraviť</button>
@@ -1255,14 +1255,14 @@
         loadEntries();
         renderTypeChips();
 
-        // Rola: Spotreba len pre admina; Lieky/Katalóg skryť opatrovateľke
+        // Rola: Spotreba len pre admina; Lieky/Katalóg skryť asistentovi
         // (server ich aj tak blokuje — UI len neponúka). currentUser využíva
         // aj entryHtml na skrytie upraviť/zmazať pri cudzích záznamoch.
         fetch('/me').then(r => r.ok ? r.json() : null).then(u => {
             if (!u) return;
             currentUser = u;
             if (u.role === 'admin') document.getElementById('usageLink').style.display = '';
-            if (u.role === 'opatrovatelka') {
+            if (u.role === 'asistent') {
                 document.getElementById('medsLink').style.display = 'none';
                 document.getElementById('catalogLink').style.display = 'none';
             }

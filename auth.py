@@ -111,19 +111,19 @@ def clear_session_cookie(response) -> None:
 # bránu (require_family) a kontrolu vlastníctva v endpointoch stavia main.py na
 # nich, aby v routách neboli magic stringy.
 
-ROLE_OPATROVATELKA = "opatrovatelka"
+ROLE_ASISTENT = "asistent"
 
 
 def is_family(role) -> bool:
     """Člen rodiny (admin/user) — plný prístup k Liekom/Katalógu a smie meniť
-    ktorýkoľvek záznam v zdieľanom rodinnom denníku. Opatrovatelka nie."""
-    return role != ROLE_OPATROVATELKA
+    ktorýkoľvek záznam v zdieľanom rodinnom denníku. Asistent nie."""
+    return role != ROLE_ASISTENT
 
 
 def can_modify_entry(user, entry) -> bool:
     """Kto smie editovať/mazať daný záznam. Rodina (admin/user) hocijaký;
-    opatrovatelka len vlastný (entry.user_id == user.id). Vlastníctvo sa teda
-    vynucuje LEN pre opatrovateľku — správanie admin/user sa nemení."""
+    asistent len vlastný (entry.user_id == user.id). Vlastníctvo sa teda
+    vynucuje LEN pre asistenta — správanie admin/user sa nemení."""
     if is_family(user["role"]):
         return True
     return entry.get("user_id") == user["id"]

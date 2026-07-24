@@ -1,12 +1,12 @@
 """
-Testy roly "opatrovatelka" (obmedzený prístup).
+Testy roly "asistent" (obmedzený prístup).
 
 Testujú sa ČISTÉ rozhodovacie funkcie (is_family, can_modify_entry z auth.py) a
 validácia roly v manage_users.py cez argparse — žiadne HTTP (API testy zatiaľ
 nemáme), žiadny zápis do DB (init_db aj handler sú pri teste zaslepené).
 
-Spusti:   pytest tests/test_role_opatrovatelka.py -v
-alebo:    python tests/test_role_opatrovatelka.py
+Spusti:   pytest tests/test_role_asistent.py -v
+alebo:    python tests/test_role_asistent.py
 """
 import os
 import sys
@@ -19,7 +19,7 @@ sys.path.insert(0, BASE)
 # nepoužívame, ide len o to, aby import prešiel.
 os.environ.setdefault("DAYLOG_SECRET", "x" * 40)
 
-from auth import is_family, can_modify_entry, ROLE_OPATROVATELKA
+from auth import is_family, can_modify_entry, ROLE_ASISTENT
 
 try:
     import pytest
@@ -37,9 +37,9 @@ def test_is_family_admin_and_user_true():
     assert is_family("user") is True
 
 
-def test_is_family_opatrovatelka_false():
-    assert is_family(ROLE_OPATROVATELKA) is False
-    assert is_family("opatrovatelka") is False
+def test_is_family_asistent_false():
+    assert is_family(ROLE_ASISTENT) is False
+    assert is_family("asistent") is False
 
 
 # ── can_modify_entry ─────────────────────────────────────────────────────────
@@ -52,16 +52,16 @@ def test_family_can_modify_any_entry():
         assert can_modify_entry(u, {"user_id": 1}) is True, role     # vlastný
 
 
-def test_opatrovatelka_can_modify_only_own():
-    u = {"id": 5, "role": ROLE_OPATROVATELKA}
+def test_asistent_can_modify_only_own():
+    u = {"id": 5, "role": ROLE_ASISTENT}
     assert can_modify_entry(u, {"user_id": 5}) is True     # vlastný
     assert can_modify_entry(u, {"user_id": 6}) is False    # cudzí
 
 
 # ── manage_users: validácia roly cez argparse (bez zápisu do DB) ─────────────
 
-def test_manage_users_accepts_opatrovatelka():
-    """add-user --role opatrovatelka prejde choices; handler aj init_db zaslepené."""
+def test_manage_users_accepts_asistent():
+    """add-user --role asistent prejde choices; handler aj init_db zaslepené."""
     import manage_users
     orig_init, orig_add = manage_users.init_db, manage_users.cmd_add_user
     captured = {}
@@ -71,12 +71,12 @@ def test_manage_users_accepts_opatrovatelka():
     old_argv = sys.argv
     try:
         sys.argv = ["manage_users.py", "add-user", "irina", "heslo123",
-                    "--role", "opatrovatelka"]
+                    "--role", "asistent"]
         manage_users.main()
     finally:
         sys.argv = old_argv
         manage_users.init_db, manage_users.cmd_add_user = orig_init, orig_add
-    assert captured.get("role") == "opatrovatelka", captured
+    assert captured.get("role") == "asistent", captured
     assert captured.get("username") == "irina", captured
 
 
