@@ -107,6 +107,14 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 
 ## Changelog
 
+### 2026-07-27
+- Nová rola "asistent" (opatrovateľka Irina): vidí všetky záznamy a pridáva nové, edituje/maže LEN vlastné; sekcie Lieky/Katalóg zablokované SERVER-SIDE (require_family na 14 API endpointoch podľa vzoru require_admin; page routy /meds a /catalog manuálna is_family kontrola s redirectom — Depends by neprihlásenému vrátilo 401 JSON namiesto presmerovania na login). /catalog/list a /catalog/lookup zostali read-only prístupné — UI záznamov ich potrebuje na katalógové odznaky
+- Vlastníctvo záznamov (can_modify_entry v auth.py): vynucuje sa LEN pre rolu asistent — admin a user si naďalej môžu navzájom upravovať záznamy (vedomé rozhodnutie: zdieľaný rodinný denník, správanie rodiny sa nemenilo). Diagnostika pritom odhalila, že PUT/DELETE /entries dovtedy nekontrolovali vlastníka vôbec
+- UI kozmetika nad servrovou bránou: odkazy Lieky/Katalóg, tlačidlá upraviť/zmazať na cudzích záznamoch a "+ Pridať do katalógu" skryté pre asistenta cez /me (vracia aj id). Server aj tak vráti 403 — UI len neponúka, čo nedovolí
+- manage_users.py: choices rozšírené o "asistent"; účet irina vytvorený na VPS. Pozor: ručné spustenie manage_users.py na VPS vyžaduje export DAYLOG_SECRET z systemd drop-inu (fail-fast z Bloku 2A platí aj pre skripty)
+- Rola bola pôvodne nasadená ako "opatrovatelka", následne premenovaná na "asistent" (kód + UPDATE users na produkcii; poradie deploy → reštart → hneď UPDATE, lebo neznámu rolu by is_family považovalo za rodinu)
+- tests/test_role_asistent.py (6 testov, čisté funkcie is_family/can_modify_entry/choices — API testy stále chýbajú). Spolu 76 testov
+
 ### 2026-07-24
 - Živé overenie event_meds zápisu na produkcii: confirm-cesta 3× (multi-liek 5/5 riadkov, qty aj aliasy správne, vrátane "300 mg Orfiril" → qty 300/mg), edit-cesta 1× (starý confirm riadok nahradený source='edit', nové event id, 0 osirených — dôkaz, že explicitný DELETE event_meds v edit transakcii funguje)
 - Spätné doplnenie 6 eventov z okna migrácia→deploy (23.7., vznikli pred reštartom služby): dry-run navrhol presne 6, záloha daylog.db.pre-eventmeds2 (integrity_check ok), --apply vložil 6 riadkov so source='migracia' (177→183), nezávislé SQL: 0 bez event_meds, 0 osirených, confirm=5/edit=1 nedotknuté, druhý --apply 0 riadkov (idempotencia). Eventy "lieky"/"vitamíny" (824, 827) majú catalog_id NULL zámerne — generický text, parser nehádže
