@@ -1,5 +1,6 @@
 import base64
 import io
+import logging
 import os
 import json
 import re
@@ -9,6 +10,9 @@ import anthropic
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Rovnaký kanál ako zvyšok servera (uvicorn.error → stderr → journalctl -u daylog).
+_log = logging.getLogger("uvicorn.error")
 
 _client = None
 
@@ -98,11 +102,14 @@ def extract_events(text: str, entry_date: str, user_id=None):
 
     response = client.messages.create(
         model=MODEL_NAME,
-        max_tokens=1536,
+        max_tokens=8192,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_message}]
     )
+    # spotrebu zaznamenaj aj pri odseknutí (Jan tokeny reálne minul), až POTOM
+    # skontroluj stop_reason — a odseknutý JSON sa vôbec nepokúšaj parsovať
     _log_llm_usage("extract", getattr(response, "usage", None), user_id=user_id)
+    check_stop_reason(getattr(response, "stop_reason", None))
 
     raw = response.content[0].text.strip()
 
@@ -124,6 +131,7 @@ def extract_events(text: str, entry_date: str, user_id=None):
 
 
 def _parse_llm_json(raw: str, fallback_text: str) -> dict | list:
+    raw = raw or ""   # None/'' → prázdny reťazec (json.loads(None) by spadlo na TypeError)
     # 1. Priamy parse
     try:
         return json.loads(raw)
@@ -148,7 +156,11 @@ def _parse_llm_json(raw: str, fallback_text: str) -> dict | list:
             except json.JSONDecodeError:
                 pass
 
-    # 4. Fallback — vráť prázdne eventy, pôvodný text
+    # 4. Fallback — vráť prázdne eventy, pôvodný text. Legitímny prípad "text bez
+    #    udalostí" sem NECHODÍ (ten sa naparsuje ako platné events:[] na úrovni 1),
+    #    takže sem padne len reálne nerozparsovaná/odseknutá odpoveď → zaloguj.
+    _log.warning("LLM JSON parse prepadol na prázdny fallback; prvých 200 znakov "
+                 "surovej odpovede: %r", raw[:200])
     return {"cleaned_text": fallback_text, "events": []}
 
 
@@ -366,6 +378,17 @@ def _pil_user_prompt(name, strength, manufacturer, atc_code):
 
 class LLMApiError(RuntimeError):
     """Zrozumiteľná chyba z Anthropic API (čítaná z tela odpovede)."""
+
+
+def check_stop_reason(stop_reason):
+    """Ak model odsekol výstup na strope max_tokens, zlyhaj NAHLAS. Inak by
+    odseknutý (neúplný) JSON prepadol na tichý prázdny fallback → 0 eventov a
+    200 OK bez chyby. 'end_turn'/'tool_use'/None a ostatné prejdú bez zásahu.
+    Vyčlenené ako čistá funkcia kvôli testovateľnosti."""
+    if stop_reason == "max_tokens":
+        raise LLMApiError(
+            "Odpoveď LLM bola odseknutá — záznam je príliš dlhý. "
+            "Skús ho rozdeliť na kratšie časti.")
 
 
 def _friendly_api_error(code, message):

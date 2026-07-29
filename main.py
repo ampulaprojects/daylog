@@ -269,6 +269,8 @@ def entries_extract(body: ExtractRequest, user=Depends(require_auth)):
         events, cleaned_text, llm_raw, llm_model = extract_events(
             body.text, body.entry_date, user_id=user["id"])
     except Exception as e:
+        log.exception("Extrakcia eventov zlyhala — user_id=%s, entry_date=%s, dĺžka textu=%s",
+                      user["id"], body.entry_date, len(body.text or ""))
         raise HTTPException(status_code=500, detail=f"LLM chyba: {e}")
     _enrich_with_catalog(events)
     return {"events": events, "cleaned_text": cleaned_text, "llm_raw": llm_raw, "llm_model": llm_model}
