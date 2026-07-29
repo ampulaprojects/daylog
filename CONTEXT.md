@@ -107,6 +107,14 @@ Cieľ: zbierať čo najviac dát, hľadať vzory.
 
 ## Changelog
 
+### 2026-07-29
+- Extrakcia eventov tíško vracala 0 eventov pri dlhých záznamoch: output narazil na max_tokens=1536, Anthropic vrátil odseknutý JSON so stop_reason="max_tokens", kód stop_reason nečítal a _parse_llm_json prepadol všetkými 4 úrovňami na tichý fallback events=[]. Endpoint vrátil 200, používateľ videl "Žiadne eventy", kredit sa minul (Jan to opakoval 6× za sebou, zakaždým 200 OK)
+- Oprava má dve časti a dôležitejšia je druhá: max_tokens 1536 → 8192 (len pri extrakcii) A nová čistá funkcia check_stop_reason — pri "max_tokens" vyhodí LLMApiError so SK hláškou PRED parsovaním. Bez nej by sa to pri ešte dlhšom texte zopakovalo rovnako ticho
+- _parse_llm_json na 4. (fallback) úrovni loguje warning s prvými 200 znakmi surovej odpovede; návrat prázdnych eventov zostal — "text bez udalostí" je legitímny prípad a parsuje sa na úrovni 1, do fallbacku nejde. stop_reason je jediný spoľahlivý rozlišovač medzi "nič tam nebolo" a "odseklo sa to"
+- /entries/extract doplnený o log.exception (vzor /entries/confirm). Overené, že anthropic SDK 0.40.0 stop_reason má (Literal end_turn/max_tokens/stop_sequence/tool_use | None) — poistka reálne vystrelí, nie je slepá
+- tests/test_llm_parsing.py (8 testov): 4 úrovne parsera, odseknutý JSON → prázdno + warning, empty/None bez pádu, check_stop_reason. Prvé testy nad llm.py vôbec. Spolu 84 testov
+- ZOSTÁVA (nebolo v zadaní, jedna premenná naraz): cleaned_text duplikuje celý vstupný text vo výstupe, čím dlhé záznamy míňajú output tokeny dvojnásobne. scan_med_package a transcribe_photo majú stále max_tokens 1536 a check_stop_reason nemajú — pri odseknutí aspoň zalogujú warning
+
 ### 2026-07-27
 - Nová rola "asistent" (opatrovateľka Irina): vidí všetky záznamy a pridáva nové, edituje/maže LEN vlastné; sekcie Lieky/Katalóg zablokované SERVER-SIDE (require_family na 14 API endpointoch podľa vzoru require_admin; page routy /meds a /catalog manuálna is_family kontrola s redirectom — Depends by neprihlásenému vrátilo 401 JSON namiesto presmerovania na login). /catalog/list a /catalog/lookup zostali read-only prístupné — UI záznamov ich potrebuje na katalógové odznaky
 - Vlastníctvo záznamov (can_modify_entry v auth.py): vynucuje sa LEN pre rolu asistent — admin a user si naďalej môžu navzájom upravovať záznamy (vedomé rozhodnutie: zdieľaný rodinný denník, správanie rodiny sa nemenilo). Diagnostika pritom odhalila, že PUT/DELETE /entries dovtedy nekontrolovali vlastníka vôbec
