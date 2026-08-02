@@ -258,7 +258,7 @@ def create_entry(entry_date, text, entry_time=None, source="typed", user_id=None
 
 
 
-def get_entries(search=None, limit=50, with_events=False):
+def get_entries(search=None, limit=50, with_events=False, offset=0):
     conn = get_db()
     query = """
         SELECT e.id, e.created_at, e.entry_date, e.entry_time, e.text, e.source,
@@ -272,8 +272,13 @@ def get_entries(search=None, limit=50, with_events=False):
     if search:
         query += " AND e.text LIKE ?"
         params.append(f"%{search}%")
-    query += " ORDER BY e.entry_date DESC, e.entry_time DESC LIMIT ?"
+    # e.id DESC ako posledné kritérium = STABILNÉ stránkovanie: pri zhodnom
+    # entry_date aj entry_time (napr. dva rýchlo za sebou zapísané záznamy alebo
+    # NULL entry_time) by inak poradie nebolo deterministické a záznam by sa cez
+    # offset mohol zopakovať alebo vypadnúť.
+    query += " ORDER BY e.entry_date DESC, e.entry_time DESC, e.id DESC LIMIT ? OFFSET ?"
     params.append(limit)
+    params.append(offset)
     rows = conn.execute(query, params).fetchall()
     entries = [dict(r) for r in rows]
 
@@ -297,6 +302,20 @@ def get_entries(search=None, limit=50, with_events=False):
 
     conn.close()
     return entries
+
+
+def count_entries(search=None):
+    """Celkový počet záznamov (s tým istým search filtrom ako get_entries) —
+    pre stránkovanie: has_more = offset + načítané < total."""
+    conn = get_db()
+    q = "SELECT COUNT(*) FROM entries WHERE 1=1"
+    params = []
+    if search:
+        q += " AND text LIKE ?"
+        params.append(f"%{search}%")
+    n = conn.execute(q, params).fetchone()[0]
+    conn.close()
+    return n
 
 
 def get_entry(entry_id):

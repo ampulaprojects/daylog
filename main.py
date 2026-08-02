@@ -12,7 +12,7 @@ from typing import Optional, List
 from database import (
     init_db, get_user_by_username, get_user_by_id,
     update_user_password,
-    create_entry, get_entries, get_entry,
+    create_entry, get_entries, count_entries, get_entry,
     create_entry_with_events, update_entry_with_events,
     delete_entry,
     get_medications, create_medication, update_medication,
@@ -365,9 +365,22 @@ def add_entry(entry: EntryCreate, user=Depends(require_auth)):
 def list_entries(
     search: Optional[str] = None,
     limit: int = 50,
+    offset: int = 0,
     user=Depends(require_auth)
 ):
-    return get_entries(search=search, limit=limit, with_events=True)
+    # obrana proti nezmyslom z URL (?limit=100000, ?offset=-5)
+    if offset < 0:
+        offset = 0
+    limit = max(1, min(limit, 200))
+    entries = get_entries(search=search, limit=limit, with_events=True, offset=offset)
+    total = count_entries(search=search)
+    has_more = offset + len(entries) < total
+    # Telo ZOSTÁVA holé pole (spätná kompatibilita — kto číta len JSON, nič
+    # nezbadá). Metadáta stránkovania idú do hlavičiek, nech nerozbijeme tvar.
+    return JSONResponse(
+        content=entries,
+        headers={"X-Total-Count": str(total), "X-Has-More": "1" if has_more else "0"},
+    )
 
 
 @app.get("/entries/{entry_id}")

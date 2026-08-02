@@ -386,6 +386,8 @@
         </div>
         <div id="filterCount" class="filter-count" style="display:none"></div>
         <div id="entryList"></div>
+        <button id="loadOlderBtn" class="btn-ghost" onclick="loadMoreEntries()"
+                style="display:none;width:100%;margin-top:12px">Načítať staršie</button>
     </div>
 
         </div><!-- /layout-right -->
@@ -406,6 +408,9 @@
         };
 
         let loadedEntries    = [];
+        const PAGE_SIZE      = 50;     // koľko záznamov na jednu "stranu"
+        let currentOffset    = 0;      // koľko záznamov už máme načítaných zo servera
+        let hasMoreEntries   = false;  // sú na serveri ešte staršie? (z hlavičky X-Has-More)
         let currentUser      = null;   // z /me — rola + id na skrytie akcií podľa vlastníctva
         let pendingData      = null;
         let editingId        = null;
@@ -1241,14 +1246,44 @@
             renderList();
         }
 
-        async function loadEntries() {
+        async function fetchEntriesPage(offset) {
             const search = document.getElementById('searchInput').value.trim();
-            const url = search ? `/entries?search=${encodeURIComponent(search)}` : '/entries';
+            let url = `/entries?limit=${PAGE_SIZE}&offset=${offset}`;
+            if (search) url += `&search=${encodeURIComponent(search)}`;
             const resp = await fetch(url);
-            if (resp.status === 401) { location.href = '/login'; return; }
-            loadedEntries = await resp.json();
+            if (resp.status === 401) { location.href = '/login'; return null; }
+            const data = await resp.json();
+            const hasMore = resp.headers.get('X-Has-More') === '1';
+            return { data, hasMore };
+        }
+
+        // Reset na prvú stranu — volá sa pri štarte, vyhľadávaní aj po
+        // pridaní/editácii/zmazaní záznamu (vždy ukáž najnovšie).
+        async function loadEntries() {
+            const page = await fetchEntriesPage(0);
+            if (!page) return;
+            loadedEntries = page.data;
+            currentOffset = page.data.length;
+            hasMoreEntries = page.hasMore;
             inlineEditId = null;
             renderList();
+            updateLoadOlderBtn();
+        }
+
+        // "Načítať staršie" — dotiahne ďalšiu stranu a PRIDÁ ju (neprepisuje).
+        async function loadMoreEntries() {
+            const page = await fetchEntriesPage(currentOffset);
+            if (!page) return;
+            loadedEntries = loadedEntries.concat(page.data);
+            currentOffset += page.data.length;
+            hasMoreEntries = page.hasMore;
+            renderList();
+            updateLoadOlderBtn();
+        }
+
+        function updateLoadOlderBtn() {
+            const btn = document.getElementById('loadOlderBtn');
+            if (btn) btn.style.display = hasMoreEntries ? '' : 'none';
         }
 
         loadCatalogList();
