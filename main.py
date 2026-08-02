@@ -4,7 +4,7 @@ import logging
 import pathlib
 import re
 from datetime import datetime
-from fastapi import FastAPI, HTTPException, Cookie, Depends, Form, UploadFile, File, Header
+from fastapi import FastAPI, HTTPException, Cookie, Depends, Form, UploadFile, File, Header, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
 from pydantic import BaseModel
@@ -361,19 +361,53 @@ def add_entry(entry: EntryCreate, user=Depends(require_auth)):
     return {"id": entry_id}
 
 
+VALID_EVENT_TYPES = {"liek", "nalada", "spravanie", "jedlo", "aktivita",
+                     "spatok", "fyzicke", "poznamka"}
+
+
+def _validate_date(value, label):
+    """None/'' → None; platný RRRR-MM-DD → vráti ho; inak 400 (nie tiché ignore
+    — nesprávny rozsah by inak potichu ukázal iné dáta, než používateľ zadal)."""
+    if not value:
+        return None
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400,
+                            detail=f"Neplatný dátum ({label}): očakávam formát RRRR-MM-DD.")
+    return value
+
+
 @app.get("/entries")
 def list_entries(
     search: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    types: Optional[List[str]] = Query(None),
+    sort: str = "event",
     user=Depends(require_auth)
 ):
     # obrana proti nezmyslom z URL (?limit=100000, ?offset=-5)
     if offset < 0:
         offset = 0
     limit = max(1, min(limit, 200))
-    entries = get_entries(search=search, limit=limit, with_events=True, offset=offset)
-    total = count_entries(search=search)
+    date_from = _validate_date(date_from, "od")
+    date_to = _validate_date(date_to, "do")
+    # types: opakovateľný query param (?types=liek&types=nalada) — FastAPI-natívne,
+    # žiadne ručné splitovanie čiarok (event_type čiarku nikdy neobsahuje).
+    # Neznámy typ ticho zahoď (uzavretý enum, klient aj server ho generujú z toho
+    # istého zoznamu → neznámy = stale klient, nie vstup používateľa; 400 by
+    # zbytočne rozbil stránku). Ak po očistení nič nezostane → bez typového filtra.
+    clean_types = [t for t in (types or []) if t in VALID_EVENT_TYPES]
+    if sort not in ("event", "created"):
+        sort = "event"
+    entries = get_entries(search=search, limit=limit, with_events=True, offset=offset,
+                          date_from=date_from, date_to=date_to,
+                          types=clean_types or None, sort=sort)
+    total = count_entries(search=search, date_from=date_from, date_to=date_to,
+                          types=clean_types or None)
     has_more = offset + len(entries) < total
     # Telo ZOSTÁVA holé pole (spätná kompatibilita — kto číta len JSON, nič
     # nezbadá). Metadáta stránkovania idú do hlavičiek, nech nerozbijeme tvar.

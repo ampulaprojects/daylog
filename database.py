@@ -258,7 +258,34 @@ def create_entry(entry_date, text, entry_time=None, source="typed", user_id=None
 
 
 
-def get_entries(search=None, limit=50, with_events=False, offset=0):
+def _entries_where(search=None, date_from=None, date_to=None, types=None):
+    """Zloží WHERE fragment (bez slova WHERE — začína ' AND …') a params pre
+    filtrovanie záznamov. Zdieľajú ho get_entries aj count_entries, aby
+    filtrovali IDENTICKY — ak sa rozídu, total/has_more začnú klamať. Dopyt musí
+    mať tabuľku entries pod aliasom `e`. Hodnoty idú VŽDY cez placeholdery."""
+    sql = ""
+    params = []
+    if search:
+        sql += " AND e.text LIKE ?"
+        params.append(f"%{search}%")
+    if date_from:
+        sql += " AND e.entry_date >= ?"
+        params.append(date_from)
+    if date_to:
+        sql += " AND e.entry_date <= ?"
+        params.append(date_to)
+    if types:
+        # záznam sa vráti, ak obsahuje ASPOŇ JEDEN event zvoleného typu (OR).
+        # EXISTS (nie JOIN) → záznam s viacerými zhodnými eventmi sa vráti RAZ.
+        placeholders = ",".join("?" * len(types))
+        sql += (f" AND EXISTS (SELECT 1 FROM events ev WHERE ev.entry_id = e.id "
+                f"AND ev.event_type IN ({placeholders}))")
+        params.extend(types)
+    return sql, params
+
+
+def get_entries(search=None, limit=50, with_events=False, offset=0,
+                date_from=None, date_to=None, types=None, sort="event"):
     conn = get_db()
     query = """
         SELECT e.id, e.created_at, e.entry_date, e.entry_time, e.text, e.source,
@@ -268,17 +295,17 @@ def get_entries(search=None, limit=50, with_events=False, offset=0):
         LEFT JOIN users u ON e.user_id = u.id
         WHERE 1=1
     """
-    params = []
-    if search:
-        query += " AND e.text LIKE ?"
-        params.append(f"%{search}%")
-    # e.id DESC ako posledné kritérium = STABILNÉ stránkovanie: pri zhodnom
-    # entry_date aj entry_time (napr. dva rýchlo za sebou zapísané záznamy alebo
-    # NULL entry_time) by inak poradie nebolo deterministické a záznam by sa cez
-    # offset mohol zopakovať alebo vypadnúť.
-    query += " ORDER BY e.entry_date DESC, e.entry_time DESC, e.id DESC LIMIT ? OFFSET ?"
-    params.append(limit)
-    params.append(offset)
+    where_sql, params = _entries_where(search, date_from, date_to, types)
+    query += where_sql
+    # e.id DESC ako posledné kritérium = STABILNÉ stránkovanie (pri zhodných
+    # hodnotách by inak poradie nebolo deterministické a záznam by sa cez offset
+    # zopakoval alebo vypadol). Chvost e.id DESC musí ostať v OBOCH režimoch.
+    if sort == "created":
+        query += " ORDER BY e.created_at DESC, e.id DESC"
+    else:   # "event" a akákoľvek neznáma hodnota → default, nespadni
+        query += " ORDER BY e.entry_date DESC, e.entry_time DESC, e.id DESC"
+    query += " LIMIT ? OFFSET ?"
+    params = params + [limit, offset]
     rows = conn.execute(query, params).fetchall()
     entries = [dict(r) for r in rows]
 
@@ -304,16 +331,13 @@ def get_entries(search=None, limit=50, with_events=False, offset=0):
     return entries
 
 
-def count_entries(search=None):
-    """Celkový počet záznamov (s tým istým search filtrom ako get_entries) —
-    pre stránkovanie: has_more = offset + načítané < total."""
+def count_entries(search=None, date_from=None, date_to=None, types=None):
+    """Celkový počet záznamov s ROVNAKÝM filtrom ako get_entries (zdieľajú
+    _entries_where) — pre stránkovanie: has_more = offset + načítané < total."""
     conn = get_db()
-    q = "SELECT COUNT(*) FROM entries WHERE 1=1"
-    params = []
-    if search:
-        q += " AND text LIKE ?"
-        params.append(f"%{search}%")
-    n = conn.execute(q, params).fetchone()[0]
+    where_sql, params = _entries_where(search, date_from, date_to, types)
+    n = conn.execute("SELECT COUNT(*) FROM entries e WHERE 1=1" + where_sql,
+                     params).fetchone()[0]
     conn.close()
     return n
 

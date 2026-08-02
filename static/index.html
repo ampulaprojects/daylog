@@ -411,6 +411,7 @@
         const PAGE_SIZE      = 50;     // koľko záznamov na jednu "stranu"
         let currentOffset    = 0;      // koľko záznamov už máme načítaných zo servera
         let hasMoreEntries   = false;  // sú na serveri ešte staršie? (z hlavičky X-Has-More)
+        let serverTotal      = 0;      // celkový počet PO filtroch (z X-Total-Count)
         let currentUser      = null;   // z /me — rola + id na skrytie akcií podľa vlastníctva
         let pendingData      = null;
         let editingId        = null;
@@ -1082,31 +1083,39 @@
             return e;
         }
 
-        function updateFilterCount(shown, total, eventsMode) {
+        function updateFilterCount(eventsMode, shownEvents) {
             const el = document.getElementById('filterCount');
-            const active = filterTypes.size > 0 || filterDateFrom || filterDateTo;
-            if (!active) { el.style.display = 'none'; return; }
+            const search = document.getElementById('searchInput').value.trim();
+            const filterActive = filterTypes.size > 0 || filterDateFrom || filterDateTo || search;
+            // ukáž počítadlo keď je filter aktívny ALEBO keď ešte nevidíme všetko
+            if (!filterActive && serverTotal <= loadedEntries.length) {
+                el.style.display = 'none';
+                return;
+            }
             el.style.display = 'block';
+            // eventsMode je klientský pohľad nad NAČÍTANÝMI záznamami — text to
+            // musí priznať, nech používateľ nemyslí, že vidí všetky eventy.
             el.textContent = eventsMode
-                ? `Zobrazených ${shown} eventov (z ${total} záznamov)`
-                : `Zobrazených ${shown} z ${total} záznamov`;
+                ? `Zobrazených ${shownEvents} eventov z ${loadedEntries.length} načítaných záznamov (${serverTotal} celkovo)`
+                : `Zobrazených ${loadedEntries.length} zo ${serverTotal} záznamov`;
         }
 
         function renderEventsMode(list) {
-            const entries = sortedEntries(dateFilteredEntries());
+            // Server už vyfiltroval a zoradil ZÁZNAMY; tu len rozbalíme eventy
+            // zvolených typov z NAČÍTANÝCH záznamov (klientský pohľad).
             const rows = [];
-            for (const e of entries) {
+            for (const e of loadedEntries) {
                 for (const ev of (e.events || [])) {
                     if (filterTypes.has(ev.event_type)) rows.push({ ev, entry: e });
                 }
             }
-            updateFilterCount(rows.length, loadedEntries.length, true);
+            updateFilterCount(true, rows.length);
             if (!rows.length) {
                 list.innerHTML = '<p style="color:#888;font-size:14px">Žiadne eventy</p>';
                 return;
             }
             list.innerHTML = `
-                <p class="filter-mode-note">Ploché zobrazenie — len vyfiltrované eventy bez kontextu záznamu</p>
+                <p class="filter-mode-note">Ploché zobrazenie — len vyfiltrované eventy z načítaných záznamov (bez kontextu záznamu)</p>
                 ${rows.map(({ev, entry}) => `
                     <div class="ev-row">
                         <span class="ev-row-date">${esc(entry.entry_date)}</span>
@@ -1146,9 +1155,9 @@
                 return;
             }
 
-            const filtered = filteredEntries();
-            const entries  = sortedEntries(filtered);
-            updateFilterCount(filtered.length, loadedEntries.length, false);
+            // Server už filtroval (dátum/typ) aj triedil (sort) — klient len zobrazí.
+            const entries = loadedEntries;
+            updateFilterCount(false);
 
             if (!entries.length) {
                 list.innerHTML = '<p style="color:#888;font-size:14px">Žiadne záznamy</p>';
@@ -1180,8 +1189,8 @@
             document.getElementById('btn-sort-created').classList.toggle('active', sortMode === 'created');
         }
 
-        function setViewMode(mode) { viewMode = mode; renderList(); }
-        function setSortMode(mode) { sortMode = mode; renderList(); }
+        function setViewMode(mode) { viewMode = mode; renderList(); }   // len prezentácia
+        function setSortMode(mode) { sortMode = mode; updateListControls(); loadEntries(); }  // triedenie na serveri
 
         // ── Filtre ───────────────────────────────────────────────────────────
 
@@ -1218,7 +1227,7 @@
             }
             renderTypeChips();
             updateFilterToggle();
-            renderList();
+            loadEntries();   // typ ide na server → reset na prvú stranu
         }
 
         function setFilterMode(mode) {
@@ -1231,7 +1240,7 @@
             filterDateFrom = document.getElementById('filterFrom').value;
             filterDateTo   = document.getElementById('filterTo').value;
             updateFilterToggle();
-            renderList();
+            loadEntries();   // dátum ide na server → reset na prvú stranu
         }
 
         function clearFilters() {
@@ -1243,18 +1252,28 @@
             document.getElementById('filterTo').value   = '';
             renderTypeChips();
             updateFilterToggle();
-            renderList();
+            loadEntries();   // zrušenie filtrov → znovu natiahni od servera
         }
 
         async function fetchEntriesPage(offset) {
+            // Všetky filtre idú na SERVER (dátum, typ, triedenie, hľadanie) —
+            // klient už nefiltruje záznamy, len ich zobrazuje. Tým sa odstránilo
+            // klamanie "filter nad načítanou stranou".
+            const p = new URLSearchParams();
+            p.set('limit', PAGE_SIZE);
+            p.set('offset', offset);
             const search = document.getElementById('searchInput').value.trim();
-            let url = `/entries?limit=${PAGE_SIZE}&offset=${offset}`;
-            if (search) url += `&search=${encodeURIComponent(search)}`;
-            const resp = await fetch(url);
+            if (search) p.set('search', search);
+            if (filterDateFrom) p.set('date_from', filterDateFrom);
+            if (filterDateTo)   p.set('date_to', filterDateTo);
+            filterTypes.forEach(t => p.append('types', t));
+            p.set('sort', sortMode);
+            const resp = await fetch('/entries?' + p.toString());
             if (resp.status === 401) { location.href = '/login'; return null; }
             const data = await resp.json();
             const hasMore = resp.headers.get('X-Has-More') === '1';
-            return { data, hasMore };
+            const total = parseInt(resp.headers.get('X-Total-Count') || '0', 10);
+            return { data, hasMore, total };
         }
 
         // Reset na prvú stranu — volá sa pri štarte, vyhľadávaní aj po
@@ -1265,6 +1284,7 @@
             loadedEntries = page.data;
             currentOffset = page.data.length;
             hasMoreEntries = page.hasMore;
+            serverTotal = page.total;
             inlineEditId = null;
             renderList();
             updateLoadOlderBtn();
@@ -1277,6 +1297,7 @@
             loadedEntries = loadedEntries.concat(page.data);
             currentOffset += page.data.length;
             hasMoreEntries = page.hasMore;
+            serverTotal = page.total;
             renderList();
             updateLoadOlderBtn();
         }
