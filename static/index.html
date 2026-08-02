@@ -1057,32 +1057,6 @@
             return `${d}. ${SK_MONTHS[m - 1]} ${y}`;
         }
 
-        function sortedEntries(src) {
-            return [...(src !== undefined ? src : loadedEntries)].sort((a, b) => {
-                if (sortMode === 'event') {
-                    const ka = (a.entry_date || '') + (a.entry_time || '');
-                    const kb = (b.entry_date || '') + (b.entry_time || '');
-                    return kb.localeCompare(ka);
-                }
-                return (b.created_at || '').localeCompare(a.created_at || '');
-            });
-        }
-
-        function dateFilteredEntries() {
-            let e = loadedEntries;
-            if (filterDateFrom) e = e.filter(x => x.entry_date >= filterDateFrom);
-            if (filterDateTo)   e = e.filter(x => x.entry_date <= filterDateTo);
-            return e;
-        }
-
-        function filteredEntries() {
-            let e = dateFilteredEntries();
-            if (filterTypes.size > 0) {
-                e = e.filter(x => (x.events || []).some(ev => filterTypes.has(ev.event_type)));
-            }
-            return e;
-        }
-
         function updateFilterCount(eventsMode, shownEvents) {
             const el = document.getElementById('filterCount');
             const search = document.getElementById('searchInput').value.trim();
