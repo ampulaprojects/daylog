@@ -72,6 +72,26 @@
         .weekday-btn:hover { background: #e5e7eb; }
         .weekday-btn.active { background: #111; color: #fff; border-color: #111; }
 
+        /* ── Parity picker (striedavý režim) ─────────────────────────────── */
+        .parity-picker { display: flex; gap: 4px; }
+        .parity-btn {
+            padding: 5px 10px; font-size: 12px; background: #f3f4f6;
+            color: #374151; border: 1px solid #e5e7eb; border-radius: 6px;
+            cursor: pointer; text-align: center;
+        }
+        .parity-btn:hover { background: #e5e7eb; }
+        .parity-btn.active { background: #111; color: #fff; border-color: #111; }
+
+        /* ── Neznáma hodnota days ────────────────────────────────────────── */
+        /* Hodnota z DB, ktorej UI nerozumie. Zobrazí sa MIESTO tichého
+           prepisu na kazdy_den — uloženie je zablokované, kým sa nezvolí
+           platný mód. Pôvodná hodnota zostane v DB nedotknutá. */
+        .days-unknown {
+            margin-top: 6px; padding: 7px 9px; font-size: 12px;
+            background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; color: #991b1b;
+        }
+        .days-unknown code { background: #fff; padding: 1px 5px; border-radius: 3px; font-size: 11px; }
+
         /* ── Page layout ─────────────────────────────────────────────────── */
         .page-wrap { max-width: 1300px; margin: 0 auto; padding: 16px; }
         .page-header { margin-bottom: 16px; }
@@ -240,6 +260,7 @@
                         <div class="days-mode-picker">
                             <button type="button" class="days-mode-btn active" data-mode="kazdy_den" onclick="daysMode(this)">Každý deň</button>
                             <button type="button" class="days-mode-btn"        data-mode="konkretne" onclick="daysMode(this)">Konkrétne dni</button>
+                            <button type="button" class="days-mode-btn"        data-mode="striedavo" onclick="daysMode(this)">Striedavo</button>
                             <button type="button" class="days-mode-btn"        data-mode="pri_krize" onclick="daysMode(this)">Pri kríze</button>
                         </div>
                         <div class="weekday-picker" style="display:none;margin-top:6px;">
@@ -250,6 +271,10 @@
                             <button type="button" class="weekday-btn" data-day="pi"  onclick="toggleWeekday(this)">Pi</button>
                             <button type="button" class="weekday-btn" data-day="so"  onclick="toggleWeekday(this)">So</button>
                             <button type="button" class="weekday-btn" data-day="ne"  onclick="toggleWeekday(this)">Ne</button>
+                        </div>
+                        <div class="parity-picker" style="display:none;margin-top:6px;">
+                            <button type="button" class="parity-btn active" data-parity="parny_datum"   onclick="toggleParity(this)">Párny dátum</button>
+                            <button type="button" class="parity-btn"        data-parity="neparny_datum" onclick="toggleParity(this)">Nepárny dátum</button>
                         </div>
                     </div>
                 </div>
@@ -290,6 +315,16 @@
     const WD_KEYS      = ['po', 'ut', 'str', 'stv', 'pi', 'so', 'ne'];
     const WD_LABELS    = { po: 'Po', ut: 'Ut', str: 'St', stv: 'Št', pi: 'Pi', so: 'So', ne: 'Ne' };
 
+    // Zrkadlo DAYS_LABELS v med_rules.py — projekt nemá build, takže sa
+    // konštanta nedá zdieľať. Pri zmene upraviť OBE miesta.
+    const PARITY_KEYS  = ['parny_datum', 'neparny_datum'];
+    const DAYS_LABELS  = {
+        kazdy_den:     'každý deň',
+        pri_krize:     'pri kríze',
+        parny_datum:   'každý párny dátum',
+        neparny_datum: 'každý nepárny dátum',
+    };
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     function esc(s) {
@@ -317,11 +352,25 @@
         if (sel) sel.innerHTML = catalogOptions(null);
     }
 
-    function catalogOptions(selectedId) {
+    /** selectedName = canonical_name aktuálne priradenej položky (z /medications).
+     *  Dropdown sa plní LEN z aktívnych položiek katalógu (/catalog/list bez
+     *  include_inactive) — to je zámer, historické položky nemajú zavadzať.
+     *  Lenže ak riadok režimu ukazuje na položku, ktorá bola medzitým
+     *  deaktivovaná, chýbala by v zozname, select by spadol na prvú možnosť
+     *  a uloženie by TICHO zrušilo väzbu (catalog_id → NULL). Preto ju sem
+     *  doplníme a označíme — rovnaká trieda chyby ako pri days. */
+    function catalogOptions(selectedId, selectedName) {
         let out = `<option value="">— ručne, bez katalógu —</option>`;
+        let found = false;
         for (const c of catalogList) {
             const label = [c.canonical_name, c.strength].filter(Boolean).join(' · ');
-            out += `<option value="${c.id}"${String(c.id) === String(selectedId) ? ' selected' : ''}>${esc(label)}</option>`;
+            const isSel = String(c.id) === String(selectedId);
+            if (isSel) found = true;
+            out += `<option value="${c.id}"${isSel ? ' selected' : ''}>${esc(label)}</option>`;
+        }
+        if (selectedId && !found) {
+            const label = (selectedName || `položka #${selectedId}`) + ' — neaktívna';
+            out += `<option value="${esc(selectedId)}" selected>${esc(label)}</option>`;
         }
         return out;
     }
@@ -357,18 +406,28 @@
         return COUNT_SYMS[n] ?? (n === Math.floor(n) ? String(Math.floor(n)) : String(n));
     }
 
+    // Neznámu hodnotu vracia ako 'neznamy' — NIKDY nie tichý fallback na
+    // 'kazdy_den'. Presne ten fallback zmazal days='parny_datum' na riadku
+    // id23 (2026-08-05): hodnota sa nikam nezapísala do DOM, a getDaysValue()
+    // ju pri uložení nahradila 'kazdy_den'.
     function parseDaysToMode(days) {
         if (!days || days === 'kazdy_den' || days === 'podla_potreby') return 'kazdy_den';
         if (days === 'pri_krize') return 'pri_krize';
-        if (days.includes(',') || WD_KEYS.includes(days)) return 'konkretne';
-        return 'kazdy_den';
+        if (PARITY_KEYS.includes(days)) return 'striedavo';
+        const keys = String(days).split(',').map(s => s.trim()).filter(Boolean);
+        if (keys.length && keys.every(d => WD_KEYS.includes(d))) return 'konkretne';
+        return 'neznamy';
     }
 
     function formatDays(days) {
-        if (!days || days === 'kazdy_den') return 'každý deň';
-        if (days === 'pri_krize') return 'pri kríze';
+        if (!days) return 'každý deň';
         if (days === 'podla_potreby') return 'podľa potreby';
-        return days.split(',').map(d => WD_LABELS[d.trim()] ?? d.trim()).join(', ');
+        if (DAYS_LABELS[days]) return DAYS_LABELS[days];
+        const keys = String(days).split(',').map(s => s.trim()).filter(Boolean);
+        if (keys.length && keys.every(d => WD_KEYS.includes(d))) {
+            return keys.map(d => WD_LABELS[d]).join(', ');
+        }
+        return `neznáme pravidlo: ${days}`;
     }
 
     function getTimeGroup(m) {
@@ -406,18 +465,52 @@
         const field = btn.closest('.days-field');
         field.querySelectorAll('.days-mode-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        field.querySelector('.weekday-picker').style.display = btn.dataset.mode === 'konkretne' ? '' : 'none';
+        const mode = btn.dataset.mode;
+        const wd = field.querySelector('.weekday-picker');
+        const pp = field.querySelector('.parity-picker');
+        if (wd) wd.style.display = mode === 'konkretne' ? '' : 'none';
+        if (pp) pp.style.display = mode === 'striedavo' ? '' : 'none';
+        // Výber platného módu ruší stav 'neznamy' — varovanie zmizne a
+        // uloženie sa odblokuje. Pôvodná hodnota v DB je tým pádom vedome
+        // nahradená, nie ticho prepísaná.
+        const warn = field.querySelector('.days-unknown');
+        if (warn) warn.remove();
     }
 
     function toggleWeekday(btn) { btn.classList.toggle('active'); }
 
+    // Parita je výber JEDNEJ z dvoch hodnôt (nie toggle ako dni v týždni).
+    function toggleParity(btn) {
+        const picker = btn.closest('.parity-picker');
+        picker.querySelectorAll('.parity-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+    }
+
+    /** Zloží hodnotu days z UI. Vracia null, ak sa hodnota zostaviť NEDÁ —
+     *  volajúci potom MUSÍ uloženie zastaviť. Do 2026-08-05 tu boli dva
+     *  tiché fallbacky na 'kazdy_den' (neznámy mód a prázdny výber dní);
+     *  obidva sú zámerne nahradené chybou. */
     function getDaysValue(fieldId) {
         const field = document.getElementById(fieldId);
-        const mode = field.querySelector('.days-mode-btn.active')?.dataset.mode;
-        if (!mode || mode === 'kazdy_den') return 'kazdy_den';
+        const mode  = field.querySelector('.days-mode-btn.active')?.dataset.mode;
+        if (!mode || mode === 'neznamy') return null;
+        if (mode === 'kazdy_den') return 'kazdy_den';
         if (mode === 'pri_krize') return 'pri_krize';
+        if (mode === 'striedavo') {
+            return field.querySelector('.parity-btn.active')?.dataset.parity ?? null;
+        }
         const sel = [...field.querySelectorAll('.weekday-btn.active')].map(b => b.dataset.day);
-        return sel.length ? sel.join(',') : 'kazdy_den';
+        return sel.length ? sel.join(',') : null;
+    }
+
+    /** Hláška pre používateľa, keď getDaysValue() vráti null. */
+    function daysErrorText(fieldId) {
+        const field = document.getElementById(fieldId);
+        const mode  = field?.querySelector('.days-mode-btn.active')?.dataset.mode;
+        if (mode === 'konkretne') return 'Vyber aspoň jeden deň v týždni.';
+        if (mode === 'striedavo') return 'Vyber, či ide o párny alebo nepárny dátum.';
+        return 'Tento liek má v databáze frekvenciu, ktorej rozhranie nerozumie. '
+             + 'Vyber platnú frekvenciu, alebo edit zruš — pôvodná hodnota tým zostane nedotknutá.';
     }
 
     // ── HTML builders ─────────────────────────────────────────────────────────
@@ -436,11 +529,22 @@
 
     function daysModeHtml(days, fieldId) {
         const mode = parseDaysToMode(days);
-        const sel  = mode === 'konkretne' ? days.split(',').map(s => s.trim()) : [];
+        const sel  = mode === 'konkretne' ? String(days).split(',').map(s => s.trim()) : [];
+        // Pri 'striedavo' predvolíme hodnotu z DB; inak párny ako neutrálny default.
+        const parity = mode === 'striedavo' ? days : 'parny_datum';
+        // Neznámu hodnotu ZOBRAZÍME so surovým textom z DB namiesto toho, aby
+        // ticho zmizla. Žiadny mode-btn nie je active → getDaysValue() vráti
+        // null → save sa zastaví a hodnota v DB prežije.
+        const unknown = mode === 'neznamy' ? `
+          <div class="days-unknown">
+            Neznáme pravidlo v databáze: <code>${esc(days)}</code><br>
+            Vyber platnú frekvenciu, alebo edit zruš — hodnota tým zostane nedotknutá.
+          </div>` : '';
         return `<div class="days-field" id="${esc(fieldId)}">
           <div class="days-mode-picker">
             <button type="button" class="days-mode-btn${mode==='kazdy_den'?' active':''}" data-mode="kazdy_den" onclick="daysMode(this)">Každý deň</button>
             <button type="button" class="days-mode-btn${mode==='konkretne'?' active':''}" data-mode="konkretne" onclick="daysMode(this)">Konkrétne dni</button>
+            <button type="button" class="days-mode-btn${mode==='striedavo'?' active':''}" data-mode="striedavo" onclick="daysMode(this)">Striedavo</button>
             <button type="button" class="days-mode-btn${mode==='pri_krize'?' active':''}" data-mode="pri_krize" onclick="daysMode(this)">Pri kríze</button>
           </div>
           <div class="weekday-picker" style="${mode==='konkretne'?'':'display:none;'}margin-top:6px;">
@@ -448,6 +552,12 @@
               `<button type="button" class="weekday-btn${sel.includes(d)?' active':''}" data-day="${d}" onclick="toggleWeekday(this)">${WD_LABELS[d]}</button>`
             ).join('')}
           </div>
+          <div class="parity-picker" style="${mode==='striedavo'?'':'display:none;'}margin-top:6px;">
+            ${PARITY_KEYS.map(p =>
+              `<button type="button" class="parity-btn${parity===p?' active':''}" data-parity="${p}" onclick="toggleParity(this)">${p==='parny_datum'?'Párny dátum':'Nepárny dátum'}</button>`
+            ).join('')}
+          </div>
+          ${unknown}
         </div>`;
     }
 
@@ -456,7 +566,7 @@
           <div class="form-group">
             <label>Z katalógu <span style="color:#bbb">(voliteľné)</span></label>
             <select id="ie-catalog" onchange="pickFromCatalog('ie', this.value)">
-              ${catalogOptions(m.catalog_id)}
+              ${catalogOptions(m.catalog_id, m.catalog_name)}
             </select>
           </div>
           <div class="form-row">
@@ -697,15 +807,24 @@
         const cv = document.getElementById('ie-count').value;
         const countVal = cv !== '' ? parseFloat(cv) : null;
 
+        const daysVal = getDaysValue('ie-days-field');
+        if (daysVal === null) { alert(daysErrorText('ie-days-field')); return; }
+
         const body = {
             name,
             kind:       document.getElementById('ie-kind').value,
             count:      (countVal != null && !isNaN(countVal)) ? countVal : null,
             dose:       document.getElementById('ie-dose').value.trim() || null,
             unit:       document.getElementById('ie-unit').value.trim() || null,
+            // time_type nemá vlastný widget — posiela sa len preto, aby sa
+            // ROUND-TRIPOL. Bez neho by ho update_medication() pri každom
+            // edite prepísal na NULL (Pydantic default), rovnaká trieda
+            // chyby ako pri days. Sémantiku dostane až blok o časových
+            // pravidlách; dovtedy sa hodnota len prenáša.
+            time_type:  m?.time_type ?? null,
             time_exact: document.getElementById('ie-time-exact').value || null,
             time_value: document.getElementById('ie-time-value').value.trim() || null,
-            days:       getDaysValue('ie-days-field'),
+            days:       daysVal,
             note:       document.getElementById('ie-note').value.trim() || null,
             sort_order: m?.sort_order ?? 0,
             catalog_id: document.getElementById('ie-catalog').value
@@ -737,15 +856,19 @@
         const cv = document.getElementById('f-count').value;
         const countVal = cv !== '' ? parseFloat(cv) : null;
 
+        const daysVal = getDaysValue('f-days-field');
+        if (daysVal === null) { alert(daysErrorText('f-days-field')); return; }
+
         const body = {
             name,
             kind:       document.getElementById('fKind').value,
             count:      (countVal != null && !isNaN(countVal)) ? countVal : null,
             dose:       document.getElementById('fDose').value.trim() || null,
             unit:       document.getElementById('fUnit').value.trim() || null,
+            time_type:  null,          // nový riadok — žiadna hodnota na zachovanie
             time_exact: document.getElementById('fTimeExact').value || null,
             time_value: document.getElementById('fTimeValue').value.trim() || null,
-            days:       getDaysValue('f-days-field'),
+            days:       daysVal,
             note:       document.getElementById('fNote').value.trim() || null,
             sort_order: 0,
             catalog_id: document.getElementById('fCatalog').value
@@ -786,6 +909,8 @@
         df.querySelectorAll('.days-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === 'kazdy_den'));
         df.querySelector('.weekday-picker').style.display = 'none';
         df.querySelectorAll('.weekday-btn').forEach(b => b.classList.remove('active'));
+        df.querySelector('.parity-picker').style.display = 'none';
+        df.querySelectorAll('.parity-btn').forEach(b => b.classList.toggle('active', b.dataset.parity === 'parny_datum'));
         document.getElementById('fNote').value = '';
     }
 

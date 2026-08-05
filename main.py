@@ -7,7 +7,7 @@ from datetime import datetime
 from fastapi import FastAPI, HTTPException, Cookie, Depends, Form, UploadFile, File, Header, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List
 from database import (
     init_db, get_user_by_username, get_user_by_id,
@@ -27,6 +27,7 @@ from auth import (
     set_session_cookie, clear_session_cookie,
     is_family, can_modify_entry,
 )
+from med_rules import KAZDY_DEN, normalize_days, InvalidDays
 from llm import extract_events, transcribe_photo, scan_med_package, fetch_pil_info
 
 UPLOAD_DIR = pathlib.Path("uploads")
@@ -451,10 +452,24 @@ class MedBody(BaseModel):
     time_type: Optional[str] = None
     time_exact: Optional[str] = None
     time_value: Optional[str] = None
-    days: str = "kazdy_den"
+    days: str = KAZDY_DEN
     note: Optional[str] = None
     sort_order: int = 0
     catalog_id: Optional[int] = None   # väzba na katalóg (NULL = ručne zadaný)
+
+    @field_validator("days")
+    @classmethod
+    def _check_days(cls, v):
+        """Neznáma hodnota days → 422, NIE tichý prepis na default.
+
+        Default v deklarácii ponechaný zámerne: klient, ktorý kľúč vôbec
+        nepošle, sa má správať ako doteraz. Odmieta sa POSLANÁ neplatná
+        hodnota — to je rozdiel oproti stavu do 2026-08-05, keď prešlo
+        čokoľvek a 'parny_datum' sa dalo ticho prepísať na 'kazdy_den'."""
+        try:
+            return normalize_days(v)
+        except InvalidDays as e:
+            raise ValueError(str(e))
 
 
 @app.get("/medications")
