@@ -1,11 +1,16 @@
 from datetime import datetime
+import logging
 import sqlite3
 import os
 import json
 
 # med_parser NEIMPORTUJE database.py (žiadny kruhový import) — je to čistý
-# deterministický parser nad odovzdaným spojením a reťazcami.
+# deterministický parser nad odovzdaným spojením a reťazcami. med_terms je
+# rovnako čistý modul (konštanty + normalizácia), takže ani ten kruh netvorí.
 from med_parser import parse_event, load_catalog
+from med_terms import is_generic
+
+log = logging.getLogger(__name__)
 
 DB_PATH = os.environ.get("DAYLOG_DB", "daylog.db")
 
@@ -46,6 +51,16 @@ def init_db():
         conn.execute("ALTER TABLE entries ADD COLUMN photo_path TEXT")
     except Exception:
         pass
+    # Blok 2B — preklad záznamu. text ostáva NEDOTKNUTÝ originál, preklad je
+    # samostatná vrstva. translation_status rozlišuje "netreba" od "zlyhalo";
+    # NULL = starý záznam, extrakcia s prekladom nikdy nebežala.
+    for _col, _decl in (("text_sk", "TEXT"),
+                        ("source_lang", "TEXT"),
+                        ("translation_status", "TEXT")):
+        try:
+            conn.execute(f"ALTER TABLE entries ADD COLUMN {_col} {_decl}")
+        except Exception:
+            pass
     conn.execute("""
         CREATE TABLE IF NOT EXISTS events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -171,6 +186,14 @@ def init_db():
             created_at TEXT NOT NULL
         )
     """)
+    # Blok 2B — provenancia: 1 = catalog_id doplnil ČLOVEK pri potvrdzovaní
+    # nešpecifikovaného lieku, nie parser. Explicitný stĺpec, nie odvodenie
+    # z (raw_name je generický AND catalog_id NOT NULL) — to by sa rozpadlo,
+    # keby niekto pridal "vitamíny" ako alias katalógovej položky.
+    try:
+        conn.execute("ALTER TABLE event_meds ADD COLUMN specified_by_user INTEGER DEFAULT 0")
+    except Exception:
+        pass
     conn.execute("CREATE INDEX IF NOT EXISTS idx_event_meds_event ON event_meds(event_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_event_meds_catalog ON event_meds(catalog_id)")
     conn.commit()
@@ -290,6 +313,7 @@ def get_entries(search=None, limit=50, with_events=False, offset=0,
     query = """
         SELECT e.id, e.created_at, e.entry_date, e.entry_time, e.text, e.source,
                e.llm_analysis, e.llm_processed_at, e.llm_model, e.user_id, e.photo_path,
+               e.text_sk, e.source_lang, e.translation_status,
                u.username AS author
         FROM entries e
         LEFT JOIN users u ON e.user_id = u.id
@@ -347,6 +371,7 @@ def get_entry(entry_id):
     row = conn.execute(
         """SELECT e.id, e.created_at, e.entry_date, e.entry_time, e.text, e.source,
                   e.llm_analysis, e.llm_processed_at, e.llm_model, e.user_id, e.photo_path,
+                  e.text_sk, e.source_lang, e.translation_status,
                   u.username AS author
            FROM entries e
            LEFT JOIN users u ON e.user_id = u.id
@@ -448,6 +473,46 @@ def delete_entry(entry_id: int):
     conn.close()
 
 
+def _apply_specified_meds(med_rows: list, specified_ids) -> list:
+    """Rozvinie JEDEN nešpecifikovaný riadok ("liek", "vitamíny") na N riadkov
+    s konkrétnymi catalog_id, ktoré vybral používateľ pri potvrdzovaní.
+
+    raw_name sa NEPREPISUJE — na všetkých N riadkoch zostáva pôvodný text.
+    Z dát tak navždy vidno, že tam stálo "vitamíny"; catalog_id hovorí, čo to
+    reálne bolo. To je audit trail, nie duplicita.
+
+    KONZERVATÍVNE PRAVIDLO: použije sa LEN ak je v evente PRÁVE JEDEN generický
+    riadok. Pri nule alebo viacerých sa špecifikácia ignoruje a zaloguje sa
+    varovanie — radšej nedoplniť než doplniť k nesprávnemu riadku. Prompt síce
+    prikazuje rozdeliť viac liekov na samostatné eventy, ale parse_event() vie
+    z jednej hodnoty vyrobiť aj viac riadkov a na to sa spoliehať nebudeme.
+
+    Prázdny/None zoznam = používateľ výzvu PRESKOČIL. To je legitímny stav:
+    riadok ostane s catalog_id = NULL presne ako predtým.
+    """
+    ids = [i for i in (specified_ids or []) if i is not None]
+    if not ids:
+        return med_rows
+
+    generic_idx = [i for i, r in enumerate(med_rows) if is_generic(r.get("raw_name"))]
+    if len(generic_idx) != 1:
+        log.warning(
+            "Upresnenie lieku ignorované — event má %s generických riadkov (očakával 1). "
+            "raw_names=%s, specified_catalog_ids=%s",
+            len(generic_idx), [r.get("raw_name") for r in med_rows], ids)
+        return med_rows
+
+    idx = generic_idx[0]
+    base = med_rows[idx]
+    expanded = []
+    for cid in ids:
+        row = dict(base)
+        row["catalog_id"] = cid
+        row["specified_by_user"] = True     # raw_name zámerne NEMENÍME
+        expanded.append(row)
+    return med_rows[:idx] + expanded + med_rows[idx + 1:]
+
+
 def _insert_events(cur, entry_id: int, user_id: int, events: list, confirmed: int,
                    source: str, catalog: list):
     """Vloží eventy existujúcim kurzorom — VOLAŤ LEN vnútri otvorenej transakcie.
@@ -471,22 +536,29 @@ def _insert_events(cur, entry_id: int, user_id: int, events: list, confirmed: in
             continue
         event_id = cur.lastrowid
         med_rows, _flags = parse_event(ev.get("value"), ev.get("note"), catalog, source=source)
+        med_rows = _apply_specified_meds(med_rows, ev.get("specified_catalog_ids"))
         for r in med_rows:
             cur.execute(
                 """INSERT INTO event_meds
-                   (event_id, catalog_id, raw_name, qty, unit, status, status_note, source, created_at)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                   (event_id, catalog_id, raw_name, qty, unit, status, status_note, source,
+                    created_at, specified_by_user)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
                 (event_id, r["catalog_id"], r["raw_name"], r["qty"], r["unit"],
-                 r["status"], r["status_note"], r["source"], now)
+                 r["status"], r["status_note"], r["source"], now,
+                 1 if r.get("specified_by_user") else 0)
             )
 
 
 def create_entry_with_events(entry_date, text, events, entry_time=None, source="typed",
                              user_id=None, photo_path=None, llm_analysis=None,
-                             llm_model=None, llm_processed_at=None):
+                             llm_model=None, llm_processed_at=None,
+                             text_sk=None, source_lang=None, translation_status=None):
     """Zapíše entry AJ všetky jeho eventy v jednej transakcii na jednom spojení.
     Buď všetko, alebo nič — pri chybe ROLLBACK a výnimka ide ďalej.
-    Vráti id nového entry. Rovnaký vzor ako merge_catalog_items()."""
+    Vráti id nového entry. Rovnaký vzor ako merge_catalog_items().
+
+    `text` je VŽDY pôvodný vstup používateľa a nikdy sa neprepisuje prekladom;
+    slovenská verzia ide do samostatného stĺpca text_sk."""
     conn = get_db()
     conn.isolation_level = None   # manuálna transakcia (BEGIN/COMMIT/ROLLBACK)
     cur = conn.cursor()
@@ -497,10 +569,12 @@ def create_entry_with_events(entry_date, text, events, entry_time=None, source="
         cur.execute(
             """INSERT INTO entries
                (user_id, created_at, entry_date, entry_time, text, source, photo_path,
-                llm_analysis, llm_model, llm_processed_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                llm_analysis, llm_model, llm_processed_at,
+                text_sk, source_lang, translation_status)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (user_id, now, entry_date, entry_time, text, source, photo_path,
-             llm_analysis, llm_model, llm_processed_at)
+             llm_analysis, llm_model, llm_processed_at,
+             text_sk, source_lang, translation_status)
         )
         entry_id = cur.lastrowid
         # confirmed=0 — rovnaká sémantika ako doterajšie create_event()
@@ -528,13 +602,19 @@ def update_entry_with_events(entry_id: int, user_id: int, text: str, events: lis
     try:
         catalog = load_catalog(conn)   # raz na transakciu, nie per event
         cur.execute("BEGIN")
+        # Text sa mení → starý preklad by mu už nezodpovedal. Radšej žiadny
+        # preklad než preklad nesúhlasiaci s textom: text_sk aj stav vynulujeme.
+        # (Nový preklad vznikne až pri prepočte cez /entries/extract.)
         if entry_date is not None:
             cur.execute(
-                "UPDATE entries SET text=?, entry_date=?, entry_time=? WHERE id=?",
+                "UPDATE entries SET text=?, entry_date=?, entry_time=?, "
+                "text_sk=NULL, source_lang=NULL, translation_status=NULL WHERE id=?",
                 (text, entry_date, entry_time or None, entry_id)
             )
         else:
-            cur.execute("UPDATE entries SET text=? WHERE id=?", (text, entry_id))
+            cur.execute(
+                "UPDATE entries SET text=?, text_sk=NULL, source_lang=NULL, "
+                "translation_status=NULL WHERE id=?", (text, entry_id))
         # PRAGMA foreign_keys je v runtime OFF → ON DELETE CASCADE nezmaže
         # event_meds starých eventov. Preto ich zmažeme explicitne PRED
         # zmazaním eventov, inak by osireli (event_id na neexistujúci event).

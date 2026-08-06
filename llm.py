@@ -9,6 +9,9 @@ import urllib.error
 import anthropic
 from dotenv import load_dotenv
 
+# Čistý modul s konštantami (bez DB a bez siete) — kruhový import netvorí.
+from med_terms import TR_NEPOTREBNY, TR_HOTOVY, TR_ZLYHAL
+
 load_dotenv()
 
 # Rovnaký kanál ako zvyšok servera (uvicorn.error → stderr → journalctl -u daylog).
@@ -25,11 +28,17 @@ def _get_client():
 
 SYSTEM_PROMPT = """Si asistent ktorý spracúva denníkové záznamy o zdravotnom stave dieťaťa.
 
-Vráť JSON objekt s dvoma poliami — žiadny iný text:
+Záznamy píše viacero ľudí a NIE VŠETKY sú po slovensky — opatrovateľka píše po rusky.
 
-"cleaned_text": Opravená verzia vstupného textu. Oprav gramatiku, interpunkciu a chyby prepisu diktovania. Zachovaj všetky fakty a informácie. Ak je text v poriadku, vráť ho bez zmeny.
+Vráť JSON objekt so štyrmi poliami — žiadny iný text:
 
-"events": Pole extrahovaných udalostí. Každý event:
+"source_lang": Kód jazyka PÔVODNÉHO textu podľa ISO 639-1 — "sk", "ru", "uk", "cs" a podobne. Vždy vyplň.
+
+"cleaned_text": Opravená verzia vstupného textu V PÔVODNOM JAZYKU. Oprav gramatiku, interpunkciu a chyby prepisu diktovania. NEPREKLADAJ — ak je vstup po rusky, cleaned_text musí byť po rusky. Zachovaj všetky fakty a informácie. Ak je text v poriadku, vráť ho bez zmeny.
+
+"text_sk": Slovenský preklad CELÉHO textu. Ak je source_lang "sk", vráť null. Inak prelož verne, zachovaj časy aj čísla.
+
+"events": Pole extrahovaných udalostí. Hodnoty v eventoch píš VŽDY po slovensky, aj keď je vstup v inom jazyku. Každý event:
   event_time — "HH:MM" alebo null
   event_type — "liek" | "nalada" | "spravanie" | "jedlo" | "aktivita" | "spatok" | "fyzicke" | "poznamka"
   value — popis max 60 znakov
@@ -40,8 +49,11 @@ Typy: liek=podanie lieku/vitamínov, nalada=emočný stav, spravanie=správanie/
 
 DÔLEŽITÉ pre lieky: Ak jeden záznam obsahuje VIAC liekov (napr. "3× Orfiril, 1/2 Tisercin, 1/4 Fevarin"), rozdeľ ich na SAMOSTATNÉ eventy typu "liek" — každý s rovnakým časom, každý len s JEDNÝM liekom. value obsahuje množstvo aj názov ("3× Orfiril"), med_name len názov ("Orfiril"). Vitamíny a doplnky rozdeľ rovnako.
 
-Príklad výstupu:
-{"cleaned_text": "...", "events": [{"event_time": "08:00", "event_type": "liek", "value": "3× Orfiril", "note": null, "med_name": "Orfiril"}, {"event_time": "08:00", "event_type": "liek", "value": "1/2 Tisercin", "note": null, "med_name": "Tisercin"}, {"event_time": "10:00", "event_type": "aktivita", "value": "vstal", "note": null, "med_name": null}]}"""
+Príklad výstupu (slovenský vstup — text_sk je null):
+{"source_lang": "sk", "cleaned_text": "...", "text_sk": null, "events": [{"event_time": "08:00", "event_type": "liek", "value": "3× Orfiril", "note": null, "med_name": "Orfiril"}, {"event_time": "08:00", "event_type": "liek", "value": "1/2 Tisercin", "note": null, "med_name": "Tisercin"}, {"event_time": "10:00", "event_type": "aktivita", "value": "vstal", "note": null, "med_name": null}]}
+
+Príklad výstupu (ruský vstup — cleaned_text zostáva po rusky, preklad ide do text_sk):
+{"source_lang": "ru", "cleaned_text": "12:15 – лекарство. 12:45 – покакал, стул нормальный.", "text_sk": "12:15 – liek. 12:45 – pokakal, stolica normálna.", "events": [{"event_time": "12:15", "event_type": "liek", "value": "liek", "note": null, "med_name": "liek"}, {"event_time": "12:45", "event_type": "fyzicke", "value": "stolica normálna", "note": null, "med_name": null}]}"""
 
 
 MODEL_NAME = "claude-sonnet-4-6"
@@ -118,16 +130,36 @@ def extract_events(text: str, entry_date: str, user_id=None):
     if isinstance(result, list):
         events = result
         cleaned_text = text
+        source_lang = None
+        text_sk = None
     else:
         events = result.get("events", [])
         cleaned_text = result.get("cleaned_text", text)
+        source_lang = (result.get("source_lang") or "").strip().lower() or None
+        text_sk = (result.get("text_sk") or "").strip() or None
 
     valid_types = {"liek", "nalada", "spravanie", "jedlo", "aktivita", "spatok", "fyzicke", "poznamka"}
     for ev in events:
         if ev.get("event_type") not in valid_types:
             ev["event_type"] = "poznamka"
 
-    return events, cleaned_text, raw, MODEL_NAME
+    translation_status = _translation_status(source_lang, text_sk)
+    if translation_status == TR_ZLYHAL:
+        # Nie tiché zlyhanie: model rozpoznal cudzí jazyk, ale preklad nedodal.
+        _log.warning("Preklad chýba pri source_lang=%r (dĺžka textu %s) — status=zlyhal",
+                     source_lang, len(text or ""))
+
+    return events, cleaned_text, raw, MODEL_NAME, text_sk, source_lang, translation_status
+
+
+def _translation_status(source_lang, text_sk):
+    """Odvodí stav prekladu. None = nevieme (model nevrátil jazyk) → necháme
+    NULL, aby sa to nezamieňalo so 'zlyhalo'."""
+    if not source_lang:
+        return None
+    if source_lang == "sk":
+        return TR_NEPOTREBNY          # text_sk je zámerne NULL, netreba prekladať
+    return TR_HOTOVY if text_sk else TR_ZLYHAL
 
 
 def _parse_llm_json(raw: str, fallback_text: str) -> dict | list:
@@ -161,6 +193,8 @@ def _parse_llm_json(raw: str, fallback_text: str) -> dict | list:
     #    takže sem padne len reálne nerozparsovaná/odseknutá odpoveď → zaloguj.
     _log.warning("LLM JSON parse prepadol na prázdny fallback; prvých 200 znakov "
                  "surovej odpovede: %r", raw[:200])
+    # source_lang/text_sk zámerne chýbajú → _translation_status vráti None,
+    # čiže "nevieme", nie "zlyhal preklad". Prepad je zlyhanie PARSOVANIA.
     return {"cleaned_text": fallback_text, "events": []}
 
 
@@ -511,8 +545,10 @@ if __name__ == "__main__":
     entry_date = "2026-06-28"
 
     print("=== Surovy vystup LLM ===")
-    events, cleaned_text, raw = extract_events(test_text, entry_date)
+    events, cleaned_text, raw, _model, text_sk, source_lang, tr_status = \
+        extract_events(test_text, entry_date)
     print(raw)
+    print(f"\n=== source_lang={source_lang} status={tr_status} text_sk={text_sk!r} ===")
     print("\n=== Cleaned text ===")
     print(cleaned_text)
     print("\n=== Parsovane eventy ===")

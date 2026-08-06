@@ -136,6 +136,30 @@
         .cat-addform { grid-column: 1 / -1; grid-row: 5; display: flex; flex-direction: column; gap: 5px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 8px; margin-top: 2px; }
         .cat-addform .r { display: flex; gap: 5px; }
         .cat-addform input, .cat-addform select { font-size: 12px; padding: 4px 6px; border: 1px solid #d1d5db; border-radius: 4px; }
+
+        /* ── Nešpecifikovaný liek ("liek", "vitamíny") ──────────────────── */
+        .event-item .med-pick { grid-column: 1 / -1; grid-row: 6; background: #eff6ff; border: 1px solid #bfdbfe;
+                                border-radius: 6px; padding: 8px; margin-top: 2px; }
+        .med-pick-label { font-size: 12px; font-weight: 600; color: #1d4ed8; margin-bottom: 2px; }
+        .med-pick-hint  { font-size: 11px; color: #64748b; margin-bottom: 6px; }
+        .med-pick-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+        .med-pick-chip {
+            font-size: 12px; padding: 4px 9px; background: #fff; color: #374151;
+            border: 1px solid #cbd5e1; border-radius: 999px; cursor: pointer;
+        }
+        .med-pick-chip:hover  { background: #e2e8f0; }
+        .med-pick-chip.active { background: #1d4ed8; color: #fff; border-color: #1d4ed8; }
+
+        /* ── Prepínač jazyka záznamu ────────────────────────────────────── */
+        .entry-lang { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+        .lang-btn {
+            font-size: 11px; padding: 2px 8px; background: #f3f4f6; color: #4b5563;
+            border: 1px solid #e5e7eb; border-radius: 999px; cursor: pointer;
+        }
+        .lang-btn:hover  { background: #e5e7eb; }
+        .lang-btn.active { background: #111; color: #fff; border-color: #111; }
+        .lang-note { font-size: 11px; color: #92400e; background: #fef3c7;
+                     padding: 2px 8px; border-radius: 4px; }
         .cat-addform input { flex: 1; min-width: 0; }
         .cat-addform .lbl { font-size: 10px; color: #92400e; font-weight: 600; }
         .cat-addform .acts { display: flex; gap: 6px; }
@@ -319,7 +343,7 @@
 
         <!-- Navrhovaný text (iba nový záznam) -->
         <div class="cleaned-box" id="cleanedSection" style="display:none">
-            <div class="cleaned-label">Navrhovaný text:</div>
+            <div class="cleaned-label">Navrhovaný text <span style="font-weight:400">(oprava gramatiky v pôvodnom jazyku — neprekladá)</span>:</div>
             <textarea class="cleaned-textarea auto-textarea" id="cleanedPreview"></textarea>
             <div class="cleaned-actions">
                 <button class="btn-sm" onclick="acceptCleaned()">Prijať</button>
@@ -539,6 +563,10 @@
                 const data = await resp.json();
                 pendingData.llm_raw   = data.llm_raw   || null;
                 pendingData.llm_model = data.llm_model || null;
+                // Preklad ide vedľa textu, NIKDY doň — pendingData.text zostáva originál.
+                pendingData.text_sk            = data.text_sk            || null;
+                pendingData.source_lang        = data.source_lang        || null;
+                pendingData.translation_status = data.translation_status || null;
                 showReview(data.events, data.cleaned_text);
             } catch(e) { alert('Chyba extrakcie: ' + e.message); }
             finally { btn.disabled = false; btn.textContent = 'Uložiť'; }
@@ -758,8 +786,28 @@
                     <input type="text"  class="input-note"  placeholder="poznámka..." value="${esc(ev.note || '')}">
                     <button class="del-btn" onclick="${delOnclick}" title="Odstrániť">✕</button>
                     ${catLink}
+                    ${medPickHtml(ev)}
                 </div>`;
             }).join('');
+        }
+
+        /** Výzva pri nešpecifikovanom lieku ("liek", "vitamíny", "лекарство").
+         *  O generickosti rozhoduje SERVER (med_terms.is_generic) a posiela ju
+         *  ako ev.generic — klient si zoznam výrazov nedrží ani nedopĺňa.
+         *  Výber je viacnásobný: "vitamíny" reálne znamená viac položiek naraz.
+         *  Nevybrať nič je legitímne — kto nevie, čo to bolo, nemá hádať. */
+        function medPickHtml(ev) {
+            if (!ev.generic) return '';
+            const chips = catalogList.map(c =>
+                `<button type="button" class="med-pick-chip" data-cat-id="${c.id}"
+                         onclick="this.classList.toggle('active')">${esc(c.canonical_name)}</button>`
+            ).join('');
+            return `<div class="med-pick">
+                <div class="med-pick-label">Ktorý liek to bol?</div>
+                <div class="med-pick-hint">V zázname stojí len „${esc(ev.value)}“. Vyber, čo sa reálne podalo —
+                    môžeš označiť aj viac. Ak nevieš, nechaj prázdne a pokračuj; doplniť sa to dá neskôr.</div>
+                <div class="med-pick-chips">${chips}</div>
+            </div>`;
         }
 
         // ── Catalog pairing (liek events) ──────────────────────────────────────
@@ -909,13 +957,20 @@
         }
 
         function gatherEvents() {
-            return Array.from(document.querySelectorAll('#eventList .event-item')).map(row => ({
-                event_time: row.querySelector('.input-time').value  || null,
-                event_type: row.querySelector('.input-type').value,
-                value:      row.querySelector('.input-value').value.trim(),
-                note:       row.querySelector('.input-note').value.trim() || null,
-                catalog_id: rowCatalogId(row),
-            })).filter(ev => ev.value);
+            return Array.from(document.querySelectorAll('#eventList .event-item')).map(row => {
+                // Prázdne pole = výzva preskočená. Posielame null, nech server
+                // nerozlišuje "nič nevybral" od "vybral prázdny zoznam".
+                const picked = Array.from(row.querySelectorAll('.med-pick-chip.active'))
+                                    .map(b => parseInt(b.dataset.catId, 10));
+                return {
+                    event_time: row.querySelector('.input-time').value  || null,
+                    event_type: row.querySelector('.input-type').value,
+                    value:      row.querySelector('.input-value').value.trim(),
+                    note:       row.querySelector('.input-note').value.trim() || null,
+                    catalog_id: rowCatalogId(row),
+                    specified_catalog_ids: picked.length ? picked : null,
+                };
+            }).filter(ev => ev.value);
         }
 
         // ── Cleaned text ─────────────────────────────────────────────────────
@@ -957,6 +1012,9 @@
                         body: JSON.stringify({ text: textToSave, events })
                     });
                 } else {
+                    // Ak používateľ prijal "Navrhovaný text", je to oprava
+                    // gramatiky V PÔVODNOM JAZYKU (prompt už neprekladá), takže
+                    // preklad text_sk k nemu stále sedí a posiela sa nezmenený.
                     resp = await fetch('/entries/confirm', {
                         method: 'POST', headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ ...pendingData, text: textToSave, events, photo_path: pendingPhotoPath || null })
@@ -1037,10 +1095,39 @@
                     </div>
                     <div class="entry-btns">${btns}</div>
                 </div>
-                <div class="entry-text">${esc(e.text)}</div>
+                ${entryTextHtml(e)}
                 ${e.photo_path ? `<div class="entry-thumb"><img src="/photos/${esc(e.photo_path.replace('uploads/',''))}" onclick="openPhoto(this.src)" loading="lazy"></div>` : ''}
                 ${eventsHtml(e.events)}
             `;
+        }
+
+        /** Text záznamu. `e.text` je VŽDY pôvodný vstup — preklad ho neprepisuje,
+         *  žije vedľa v e.text_sk. Prepínač sa ukáže len keď je čo prepínať;
+         *  staré záznamy (translation_status = null) sa správajú ako predtým. */
+        function entryTextHtml(e) {
+            if (e.text_sk) {
+                return `<div class="entry-lang">
+                        <button class="lang-btn active" onclick="setEntryLang(${e.id}, 'sk', this)">slovensky</button>
+                        <button class="lang-btn" onclick="setEntryLang(${e.id}, 'orig', this)">originál${
+                            e.source_lang ? ' (' + esc(e.source_lang) + ')' : ''}</button>
+                    </div>
+                    <div class="entry-text" id="entry-text-${e.id}"
+                         data-sk="${esc(e.text_sk)}" data-orig="${esc(e.text)}">${esc(e.text_sk)}</div>`;
+            }
+            // Preklad chýbal, hoci text nebol po slovensky — nie ticho, povedz to.
+            const failed = e.translation_status === 'zlyhal'
+                ? `<div class="entry-lang"><span class="lang-note">preklad zlyhal${
+                       e.source_lang ? ' — originál je ' + esc(e.source_lang) : ''}</span></div>`
+                : '';
+            return `${failed}<div class="entry-text">${esc(e.text)}</div>`;
+        }
+
+        function setEntryLang(entryId, which, btn) {
+            const el = document.getElementById('entry-text-' + entryId);
+            if (!el) return;
+            el.textContent = which === 'sk' ? el.dataset.sk : el.dataset.orig;
+            btn.parentElement.querySelectorAll('.lang-btn')
+               .forEach(b => b.classList.toggle('active', b === btn));
         }
 
         // ── Zobrazenie a triedenie ───────────────────────────────────────────

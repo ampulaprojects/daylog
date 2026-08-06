@@ -28,6 +28,9 @@ from auth import (
     is_family, can_modify_entry,
 )
 from med_rules import KAZDY_DEN, normalize_days, InvalidDays
+from med_terms import (
+    is_generic, normalize_status, InvalidTranslationStatus,
+)
 from llm import extract_events, transcribe_photo, scan_med_package, fetch_pil_info
 
 UPLOAD_DIR = pathlib.Path("uploads")
@@ -200,6 +203,10 @@ class EventItem(BaseModel):
     value: str
     note: Optional[str] = None
     catalog_id: Optional[int] = None
+    #: Blok 2B — položky katalógu, ktoré používateľ vybral pri nešpecifikovanom
+    #: lieku ("liek", "vitamíny"). Prázdne / None = výzvu PRESKOČIL, čo je
+    #: legitímny stav (nevie, čo to bolo, a nemá byť nútený hádať).
+    specified_catalog_ids: Optional[List[int]] = None
 
 
 class ConfirmRequest(BaseModel):
@@ -211,6 +218,34 @@ class ConfirmRequest(BaseModel):
     photo_path: Optional[str] = None
     llm_raw: Optional[str] = None
     llm_model: Optional[str] = None
+    #: Blok 2B — preklad. `text` vyššie zostáva VŽDY pôvodný vstup.
+    text_sk: Optional[str] = None
+    source_lang: Optional[str] = None
+    translation_status: Optional[str] = None
+
+    @field_validator("translation_status")
+    @classmethod
+    def _check_status(cls, v):
+        try:
+            return normalize_status(v)
+        except InvalidTranslationStatus as e:
+            raise ValueError(str(e))
+
+
+def _validate_specified_ids(events: list) -> None:
+    """Overí, že všetky vybrané catalog_id existujú a sú AKTÍVNE.
+    Neznáme id → 400, nie tichý zápis nezmyselnej väzby (FK nie sú vynucované,
+    takže to tu musí ustrážiť aplikačná logika)."""
+    wanted = {cid for ev in events for cid in (ev.get("specified_catalog_ids") or [])}
+    if not wanted:
+        return
+    active = {i["id"] for i in get_catalog(include_inactive=False)}
+    bad = sorted(wanted - active)
+    if bad:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Neznáme alebo neaktívne položky katalógu: {bad}. "
+                   f"Vyber lieky zo zoznamu.")
 
 
 @app.post("/entries/transcribe")
@@ -238,13 +273,19 @@ _MED_TOKEN_SPLIT = re.compile(r"[\s,;/×·]+")
 
 
 def _enrich_with_catalog(events: list) -> None:
-    """Pre každý liekový event doplní catalog_id / catalog_name / matched.
-    Hodnota (value) sa NEPREPISUJE — je to audit toho, čo bolo reálne povedané."""
+    """Pre každý liekový event doplní catalog_id / catalog_name / matched / generic.
+    Hodnota (value) sa NEPREPISUJE — je to audit toho, čo bolo reálne povedané.
+
+    `generic` = raw_name je všeobecný výraz ("liek", "vitamíny", "лекарство"),
+    čiže sa nedá priradiť k slotu režimu a UI má na to opýtať. Detekcia beží
+    TU na serveri, aby zoznam výrazov zostal na jednom mieste v Pythone —
+    klient ho len dostane ako boolean a nič nerozhoduje sám."""
     for ev in events:
         if ev.get("event_type") != "liek":
             ev["catalog_id"] = None
             ev["catalog_name"] = None
             ev["matched"] = None
+            ev["generic"] = False
             continue
         candidates = []
         med_name = (ev.get("med_name") or "").strip()
@@ -262,19 +303,28 @@ def _enrich_with_catalog(events: list) -> None:
         ev["catalog_id"] = match["id"] if match else None
         ev["catalog_name"] = match["canonical_name"] if match else None
         ev["matched"] = bool(match)
+        # Na generickosť sa pýtame med_name aj celej hodnoty — LLM vracia
+        # "liek" v oboch. Už spárovaný liek generický nie je (nemá sa na čo pýtať).
+        ev["generic"] = (not match) and (
+            is_generic(med_name) or is_generic(ev.get("value"))
+        )
 
 
 @app.post("/entries/extract")
 def entries_extract(body: ExtractRequest, user=Depends(require_auth)):
     try:
-        events, cleaned_text, llm_raw, llm_model = extract_events(
+        (events, cleaned_text, llm_raw, llm_model,
+         text_sk, source_lang, translation_status) = extract_events(
             body.text, body.entry_date, user_id=user["id"])
     except Exception as e:
         log.exception("Extrakcia eventov zlyhala — user_id=%s, entry_date=%s, dĺžka textu=%s",
                       user["id"], body.entry_date, len(body.text or ""))
         raise HTTPException(status_code=500, detail=f"LLM chyba: {e}")
     _enrich_with_catalog(events)
-    return {"events": events, "cleaned_text": cleaned_text, "llm_raw": llm_raw, "llm_model": llm_model}
+    return {"events": events, "cleaned_text": cleaned_text,
+            "llm_raw": llm_raw, "llm_model": llm_model,
+            "text_sk": text_sk, "source_lang": source_lang,
+            "translation_status": translation_status}
 
 
 @app.post("/entries/confirm", status_code=201)
@@ -282,12 +332,15 @@ def entries_confirm(body: ConfirmRequest, user=Depends(require_auth)):
     llm_processed_at = datetime.utcnow().isoformat() if body.llm_raw else None
     events_data = [{"event_time": ev.event_time, "event_type": ev.event_type,
                     "value": ev.value, "note": ev.note,
-                    "catalog_id": ev.catalog_id if ev.event_type == "liek" else None}
+                    "catalog_id": ev.catalog_id if ev.event_type == "liek" else None,
+                    "specified_catalog_ids": (ev.specified_catalog_ids
+                                              if ev.event_type == "liek" else None)}
                    for ev in body.events]
+    _validate_specified_ids(events_data)
     try:
         entry_id = create_entry_with_events(
             entry_date=body.entry_date,
-            text=body.text,
+            text=body.text,                 # VŽDY pôvodný vstup, nikdy preklad
             events=events_data,
             entry_time=body.entry_time,
             source=body.source,
@@ -296,6 +349,9 @@ def entries_confirm(body: ConfirmRequest, user=Depends(require_auth)):
             llm_analysis=body.llm_raw,
             llm_model=body.llm_model,
             llm_processed_at=llm_processed_at,
+            text_sk=body.text_sk,
+            source_lang=body.source_lang,
+            translation_status=body.translation_status,
         )
     except Exception as e:
         log.exception("Zápis záznamu zlyhal (rollback, nezapísalo sa nič) — "
@@ -332,10 +388,16 @@ def update_entry_endpoint(entry_id: int, body: EntryUpdate, user=Depends(require
         raise HTTPException(status_code=404, detail="Záznam nenájdený")
     if not can_modify_entry(user, entry):
         raise HTTPException(status_code=403, detail="Upravovať môžeš len vlastné záznamy.")
+    # specified_catalog_ids sa MUSÍ preniesť aj sem: update_entry_with_events()
+    # maže a znova vytvára všetky event_meds, takže bez toho by prvá editácia
+    # zmazala všetky doplnené lieky a riadky by spadli späť na catalog_id NULL.
     events_data = [{"event_time": e.event_time, "event_type": e.event_type,
                     "value": e.value, "note": e.note,
-                    "catalog_id": e.catalog_id if e.event_type == "liek" else None}
+                    "catalog_id": e.catalog_id if e.event_type == "liek" else None,
+                    "specified_catalog_ids": (e.specified_catalog_ids
+                                              if e.event_type == "liek" else None)}
                    for e in body.events]
+    _validate_specified_ids(events_data)
     try:
         update_entry_with_events(entry_id, user["id"], body.text, events_data,
                                  body.entry_date, body.entry_time)
